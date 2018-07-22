@@ -1,0 +1,322 @@
+const fs = require('fs');
+
+const Lru = require('lru-cache');
+
+const PAGE_SIZE = 1024;
+const FILEPATH = 'js.db';
+const INDEXPATH = 'js.index';
+
+const ByteSize = function(str) {
+	str = str.toString();
+	let len = str.length;
+
+	for (let i = str.length; i--; ) {
+    	const code = str.charCodeAt(i);
+    	if (0xdc00 <= code && code <= 0xdfff) {
+      	i--;
+    }
+
+    if (0x7f < code && code <= 0x7ff) {
+      len++;
+    } else if (0x7ff < code && code <= 0xffff) {
+      len += 2;
+    }
+  }
+
+  return len;
+}
+
+// generate auto incresed id and the length of id : 6
+let count = 0; // less than 256 * 256
+let id = 0;
+const IdGen = function() {
+	let timeId = + new Date();
+	if(timeId > id) {
+		count = 0;
+	} else {
+		count ++
+	}
+	id = timeId;
+	return {
+		timeId: timeId,
+		count: count
+	}
+}
+
+// return 1 when id1 > id2; 0 when id1 === id2; otherwise -1
+const IdCompare= function(id1, id2) {
+	if(id1.timeId > id2.timeId) {
+		return 1
+	} else if(id1.timeId === id2.timeId) {
+		if(id1.count > id2.count) {
+			return 1;
+		} else if(id1.count === id2.count) {
+			return 0;
+		} else if(id1.count < id2.count) {
+			return -1;
+		}
+	} else {
+		return -1;
+	}
+}
+
+const cache = Lru(64);
+
+class DataPage {
+	constructor(pageNo) {
+		this.pageNo = pageNo;      	// start from zero
+		this.data = Buffer.alloc(PAGE_SIZE);
+		this.size = 0;				// the size of data
+		this.offset = PAGE_SIZE;  	// write data from bottom up
+	}
+	
+	freeData() {
+		return this.offset - 4 - this.size*8
+	}
+
+	insertCell(cellData) {
+		let id = IdGen();
+		let byteSize = ByteSize(cellData)
+		if((this.freeData() - byteSize - 8) > 0) {
+			this.data.write(cellData, this.offset - byteSize);
+			this.offset = this.offset - byteSize
+
+			this.data.writeInt32LE(id, this.size*8 + 4);
+			this.data.writeInt32LE(this.offset, this.size*8 + 4 +4);
+			this.size ++;
+			this.data.writeInt32LE(this.size, 0);
+
+			return true;
+		} else {		// has no room for cellData
+			return false;
+		}
+	}
+
+	getCell(id) {
+		fs.open('js.db', 'r', (err, file)=> {
+			fs.read(file, this.data, 0, PAGE_SIZE, this.pageNo * PAGE_SIZE, (err, data)=> {
+				let size = this.data.readInt32LE();
+
+				let maxId = this.data.readInt32LE(size*8 - 4);
+				let minId = this.data.readInt32LE(4);
+				if(id > maxId || id < minId) {
+					console.log('no data matched id:', id);
+				} else {
+					let max=size, min = 1;
+					let middle = Math.ceil((max + min) / 2);
+					let midId = this.data.readInt32LE(middle*8 -4);
+					while(midId !== id) {
+						console.log('midId', midId)
+						if((max - min) === 1) {
+							midId = null;
+							break;
+						}
+						if(midId > id) {
+							max = middle
+						} else {
+							min = middle
+						}
+						middle = Math.ceil((max + min) / 2);
+						midId = this.data.readInt32LE(middle*8 -4);
+					}
+
+					if(midId) {
+						let offset = this.data.readInt32LE(middle*8);
+						console.log('offset', offset)
+
+						let result = Buffer.alloc(13);
+						this.data.copy(result, 0, offset, offset + 13)
+						console.log('result', result.toString())
+					} else {
+						console.log('no matched result')
+					}
+				}
+			})
+		})
+	}
+
+	flush() {
+		fs.open('js.db', 'w', (err, file)=> {
+			console.log(err)
+			fs.writeSync(file, this.data, 0, PAGE_SIZE, this.pageNo * PAGE_SIZE);
+		});
+	}
+
+	static load(pageNo, cb) {
+		console.log('load');
+		let page = new DataPage(pageNo);
+		fs.open('js.db', 'r', (err, file)=> {
+			fs.read(file, page.data, 0, PAGE_SIZE, pageNo * PAGE_SIZE, (err, data)=> {
+				cb(err, page);
+				console.log('data size', page.data.readInt32LE());
+			});
+		})
+	}
+
+	static getPageSize() {
+		const stat = fs.statcSync(FILEPATH);
+		return stat.size / PAGE_SIZE;
+	}
+}
+
+class IdPage {
+	/*
+		the format of this kind page is :
+		-----------------------------------------------------------------------
+		|  pageParent  |  size  |  pageNo | [cell1, cell2, cell3, cell4 ......]
+		-----------------------------------------------------------------------
+		every cell is : childPageNo + id
+
+		the size of the filed above is:
+		pageParent:  4b
+		size      :  2b
+		pageNo    :  4b
+		childPageNo: 4b
+		id:          4b
+	*/
+	constructor(pageParent, pageNo) {
+		if(typeof pageParent === 'number') {
+			this.pageParent = pageParent;
+		}
+
+		if(typeof pageNo === 'number') {
+			this.pageNo = pageNo;
+			cache.set(pageNo, this);
+		}
+
+		this.data = Buffer.alloc(PAGE_SIZE);
+		this.data.writeInt32LE(pageParent, 0);
+		this.offset = PAGE_SIZE;
+		this.size = 0;
+	}
+
+	getPageNo() {
+		return this.pageNo;
+	}
+
+	getPageParent() {
+		return this.paegParent;
+	}
+	getSize() {
+		return this.size;
+	}
+	setPageNo(pageNo) {
+		this.pageNo = pageNo;
+		return this;
+	}
+	setPageParent(pageParent) {
+		this.pageParent = pageParent;
+		return this;
+	}
+	setSize(size) {
+		this.size = size;
+		return this;
+	}
+
+	// get the size of free room
+	freeData() {
+		// this.offset - sizeof(pageParent) - sizeof(size) - sizeof(pageNo)
+		return this.offset - 4 - 2 - 4;
+	}
+
+	getRootPage() {
+		let pageOne = Buffer.alloc(PAGE_SIZE);
+		return new Promise((resolve, reject)=> {
+			fs.open(INDEXPATH, 'r', (err, file)=> {
+				if(err) {
+					return reject(err)
+				}
+				fs.read(file, pageOne, 0, PAGE_SIZE, 0, (err, data)=> {
+				let rootPageNo = data.readInt32LE();
+				if(err) {
+					return reject(err);
+				}
+				resolve(rootPageNo)
+			})
+			})
+		})
+	}
+
+	setRootPage(rootPageNo) {
+		let pageData = Buffer.alloc(PAGE_SIZE);
+		pageData.writeInt32LE(rootPageNo);
+
+		fs.open(INDEXPATH, 'w', (err, file)=> {
+			fs.writeSync(file, pageData, 0, PAGE_SIZE, 0);
+		})
+	}
+
+	insertCell(childPageNo) {
+		let id = IdGen();
+
+		if (this.freeData() >= 8) {
+			this.data.writeInt32LE(id, this.offset - 8);
+			this.data.writeInt32LE(childPageNo, this.offset - 4);
+			this.offset = this.offset - 8;
+
+			return true;
+		} else {
+			return false;
+		}
+
+	}
+
+	static load(pageNo, cb) {
+		let page = new IdPage();
+		fs.open(INDEXPATH, 'r', (err, file)=> {
+			fs.read(file, page.data, 0, PAGE_SIZE, pageNo * PAGE_SIZE, (err, data)=> {
+				let pageParent = page.data.readInt32LE(0);
+				let size = page.data.readInt16LE(4);
+				let pageNo = page.data.readInt32LE(6);
+				page.setPageParent(pageParent)
+					.setSize(size)
+					.setPageNo(pageNo);
+
+				cb(err, page);
+			})
+		})
+	}
+
+	static getPage(pageNo, cb) {
+		let page = cache.get(pageNo);
+		if(page) {
+			cb(page);
+		} else {
+			IdPage.load(pageNo, cb);
+		}
+	}
+
+	static getPageSize() {
+		const stat = fs.statSync(INDEXPATH);
+		return stat.size / PAGE_SIZE
+	}
+
+	flush() {
+		fs.open(INDEXPATH, 'w', (err, file)=> {
+			fs.writeSync(file, this.data, 0, PAGE_SIZE, this.pageNo * PAGE_SIZE);
+		})
+	}
+}
+
+
+// let page = new DataPage(1);
+// page.insertCell(1, 'stringDataPage1');
+// page.insertCell(2, 'nodejsDataPage1');
+// page.insertCell(3, 'javaDataPage1');
+// page.flush()
+// let page1 = DataPage.load(1, (err, page)=> {
+// 	page.getCell(3)
+// })
+
+// for(var i = 0; i < 10000; i ++) {
+// 	console.log(IdGen())
+// }
+
+exports.DataPage = DataPage;
+exports.IdPage = IdPage;
+
+const st = function() {
+	let st = fs.statSync(INDEXPATH);
+	console.log('st.size:', st.size)
+}
+st();
