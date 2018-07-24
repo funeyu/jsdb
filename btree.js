@@ -29,11 +29,54 @@ const compare= function(key1, key2) {
 	}
 }
 
+// generate auto incresed id and the length of id : 6
+let count = 0; // less than 256 * 256
+let id = 0;
+const IdGen = function() {
+	let timeId = + new Date();
+	if(timeId > id) {
+		count = 0;
+	} else {
+		count ++
+	}
+	id = timeId;
+	return {
+		timeId: timeId,
+		count: count
+	}
+}
+
+// return 1 when id1 > id2; 0 when id1 === id2; otherwise -1
+const IdCompare= function(id1, id2) {
+	if(id1.timeId > id2.timeId) {
+		return 1
+	} else if(id1.timeId === id2.timeId) {
+		if(id1.count > id2.count) {
+			return 1;
+		} else if(id1.count === id2.count) {
+			return 0;
+		} else if(id1.count < id2.count) {
+			return -1;
+		}
+	} else {
+		return -1;
+	}
+}
+
 console.log(compare('key21', 'key2'));
 
+let currentPageNo = DataPage.getPageSize();
 
 const insertData = function(data) {
-	
+	let id = IdGen();
+
+	DataPage.load(currentPageNo, function(page) {
+		let result = page.insertCell(id, data);
+		if(!result) {
+			page.flush();
+			IdPage.insertCell(id, currentPageNo);
+		}
+	})
 }
 
 

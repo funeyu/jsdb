@@ -26,40 +26,6 @@ const ByteSize = function(str) {
   return len;
 }
 
-// generate auto incresed id and the length of id : 6
-let count = 0; // less than 256 * 256
-let id = 0;
-const IdGen = function() {
-	let timeId = + new Date();
-	if(timeId > id) {
-		count = 0;
-	} else {
-		count ++
-	}
-	id = timeId;
-	return {
-		timeId: timeId,
-		count: count
-	}
-}
-
-// return 1 when id1 > id2; 0 when id1 === id2; otherwise -1
-const IdCompare= function(id1, id2) {
-	if(id1.timeId > id2.timeId) {
-		return 1
-	} else if(id1.timeId === id2.timeId) {
-		if(id1.count > id2.count) {
-			return 1;
-		} else if(id1.count === id2.count) {
-			return 0;
-		} else if(id1.count < id2.count) {
-			return -1;
-		}
-	} else {
-		return -1;
-	}
-}
-
 const cache = Lru(64);
 
 class DataPage {
@@ -68,14 +34,15 @@ class DataPage {
 		this.data = Buffer.alloc(PAGE_SIZE);
 		this.size = 0;				// the size of data
 		this.offset = PAGE_SIZE;  	// write data from bottom up
+
+		cache.put(pageNo + '_Data', this);
 	}
 	
 	freeData() {
 		return this.offset - 4 - this.size*8
 	}
 
-	insertCell(cellData) {
-		let id = IdGen();
+	insertCell(id, cellData) {
 		let byteSize = ByteSize(cellData)
 		if((this.freeData() - byteSize - 8) > 0) {
 			this.data.write(cellData, this.offset - byteSize);
@@ -143,10 +110,16 @@ class DataPage {
 	}
 
 	static load(pageNo, cb) {
-		console.log('load');
-		let page = new DataPage(pageNo);
+		let page = cache.get(pageNo + '_Data');
+		if(page) {
+			cb(page);
+		}
+
+		page = new DataPage(pageNo);
 		fs.open('js.db', 'r', (err, file)=> {
 			fs.read(file, page.data, 0, PAGE_SIZE, pageNo * PAGE_SIZE, (err, data)=> {
+				cache.put(pageNo + '_Data', page);
+				
 				cb(err, page);
 				console.log('data size', page.data.readInt32LE());
 			});
@@ -246,8 +219,7 @@ class IdPage {
 		})
 	}
 
-	insertCell(childPageNo) {
-		let id = IdGen();
+	insertCell(id, childPageNo) {
 
 		if (this.freeData() >= 8) {
 			this.data.writeInt32LE(id, this.offset - 8);
