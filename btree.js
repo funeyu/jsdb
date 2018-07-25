@@ -65,16 +65,50 @@ const IdCompare= function(id1, id2) {
 
 console.log(compare('key21', 'key2'));
 
-let currentPageNo = DataPage.getPageSize();
+let currentDataPageNo = DataPage.getPageSize();
+let currentIdPageNo = IdPage.getPageSize();
+
+const insertrecursively(idPage, id, pagePageNo) {
+	if(!idPage.insertCell(id, pagePageNo)) {
+		idPage.flush();
+		currentIdPageNo ++;
+
+		// not set parentPage
+		let newIdPage = new IdPage(null, currentIdPageNo);
+		newIdPage.insertCell(id, pagePageNo);
+
+		if(idPage.)
+	}
+}
 
 const insertData = function(data) {
 	let id = IdGen();
 
-	DataPage.load(currentPageNo, function(page) {
+	DataPage.load(currentDataPageNo, function(page) {
 		let result = page.insertCell(id, data);
 		if(!result) {
 			page.flush();
-			IdPage.insertCell(id, currentPageNo);
+			// currentDataPageNo = DataPage.getPageSize();
+			currentDataPageNo ++;
+
+			let dataPageNo = currentDataPageNo + 1
+			let dataPage = new DataPage(dataPageNo);
+			// to do: if the data large than DataPage size
+			dataPage.insertCell(id, data);
+
+			IdPage.load(currentIdPageNo, function(idPage) {
+				let insertResult;
+				for(;;) {
+					insertResult = idPage.insertCell(id, dataPageNo);
+					if(insertResult) {
+						break;
+					} else {
+						let newIdPage = idPg
+						idPage = idPage.getPageParent();
+					}
+
+				}
+			})
 		}
 	})
 }
