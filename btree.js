@@ -67,17 +67,32 @@ console.log(compare('key21', 'key2'));
 
 let currentDataPageNo = DataPage.getPageSize();
 let currentIdPageNo = IdPage.getPageSize();
+let currentLeafIdNo = IdPage.getLeafNo();
 
-const insertrecursively(idPage, id, pagePageNo) {
-	if(!idPage.insertCell(id, pagePageNo)) {
-		idPage.flush();
-		currentIdPageNo ++;
-
-		// not set parentPage
-		let newIdPage = new IdPage(null, currentIdPageNo);
-		newIdPage.insertCell(id, pagePageNo);
-
-		if(idPage.)
+// pageData: {id: xxx, pageNo: xxxx}
+const insertrecursively(idPage, pageData) {
+	let result = idPage.insertCell(pageData.id, pageData.pageNo);
+	if(result === 'FULL') {
+		IdPage.load(idPage.getPageParent(), function(parentPage) {
+			let newIdPage = new IdPage(null, ++currentIdPageNo);
+			if(parentPage.isRoot()) {
+				// mark this idPage as root page
+				newIdPage.setRoot(true);
+				newIdPage.insertCell(pageData.id, pageData.pageNo);
+			} else {
+				insertrecursively(parentPage, {
+					id: pageData.id, 
+					pageNo: parentPage.page
+				})
+			}
+		});
+	}
+	else if(result === 'LINK') {
+		let newIdPage = new IdPage(idPage.getPageParent(), ++currentIdPageNo);
+		newIdPage.insertCell(pageData.id, pageData.pageNo);
+		
+		newIdPage.setPre(idPage);
+		idPage.setNext(newIdPage);
 	}
 }
 
@@ -97,7 +112,12 @@ const insertData = function(data) {
 			dataPage.insertCell(id, data);
 
 			IdPage.load(currentIdPageNo, function(idPage) {
-				let insertResult;
+				let insertResult = idPage.insertCell(id, dataPageNo);
+				if(insertResult) {
+					break;
+				} else {
+					let newIdPage = 
+				}
 				for(;;) {
 					insertResult = idPage.insertCell(id, dataPageNo);
 					if(insertResult) {

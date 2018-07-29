@@ -185,6 +185,10 @@ class IdPage {
 		this.size = size;
 		return this;
 	}
+	setRoot(isRoot) {
+		this.isRoot = isRoot;
+		return this;
+	}
 
 	// get the size of free room
 	freeData() {
