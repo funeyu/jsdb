@@ -67,22 +67,36 @@ console.log(compare('key21', 'key2'));
 
 let currentDataPageNo = DataPage.getPageSize();
 let currentIdPageNo = IdPage.getPageSize();
-let currentLeafIdNo = IdPage.getLeafNo();
+let currentLeafIdNo ;
+IdPage.getLeafNo().then(leafNo=> {
+	currentLeafIdNo = leafNo;
+})
 
 // pageData: {id: xxx, pageNo: xxxx}
 const insertrecursively(idPage, pageData) {
-	let result = idPage.insertCell(pageData.id, pageData.pageNo);
+	let {id, pageNo} = pageData
+
+	let result = idPage.insertCell(id, pageNo);
 	if(result === 'FULL') {
+		if(idPage.isRoot()) {
+			let newIdPage = new IdPage(null, ++currentIdPageNo);
+			newIdPage.setRoot(true);
+			newIdPage.insertCell(id, pageNo);
+
+			IdPage.setRootPage(newIdPage.pageNo);
+		}
+
 		IdPage.load(idPage.getPageParent(), function(parentPage) {
 			let newIdPage = new IdPage(null, ++currentIdPageNo);
 			if(parentPage.isRoot()) {
 				// mark this idPage as root page
 				newIdPage.setRoot(true);
-				newIdPage.insertCell(pageData.id, pageData.pageNo);
+				newIdPage.insertCell(id, pageNo);
+				IdPage.setRootPage(newIdPage.pageNo);
 			} else {
 				insertrecursively(parentPage, {
 					id: pageData.id, 
-					pageNo: parentPage.page
+					pageNo: parentPage.pageNo
 				})
 			}
 		});
@@ -101,36 +115,24 @@ const insertData = function(data) {
 
 	DataPage.load(currentDataPageNo, function(page) {
 		let result = page.insertCell(id, data);
-		if(!result) {
+		if(result === 'FULL') {
 			page.flush();
-			// currentDataPageNo = DataPage.getPageSize();
+			let pageNo = currentDataPageNo;
 			currentDataPageNo ++;
 
-			let dataPageNo = currentDataPageNo + 1
-			let dataPage = new DataPage(dataPageNo);
+			let dataPage = new DataPage(currentDataPageNo);
 			// to do: if the data large than DataPage size
 			dataPage.insertCell(id, data);
 
-			IdPage.load(currentIdPageNo, function(idPage) {
-				let insertResult = idPage.insertCell(id, dataPageNo);
-				if(insertResult) {
-					break;
-				} else {
-					let newIdPage = 
-				}
-				for(;;) {
-					insertResult = idPage.insertCell(id, dataPageNo);
-					if(insertResult) {
-						break;
-					} else {
-						let newIdPage = idPg
-						idPage = idPage.getPageParent();
-					}
-
-				}
+			IdPage.load(currentLeafIdNo, function(idLeafPage) {
+				insertrecursively(idLeafPage, {id, pageNo});
 			})
 		}
 	})
+}
+
+const getDataById = function(id, cb) {
+	
 }
 
 

@@ -163,6 +163,14 @@ class IdPage {
 		this.size = 0;
 	}
 
+	getPageNoById(id) {
+		if(this.isLeaf()) {
+
+		}
+
+		
+	}
+
 	getPageNo() {
 		return this.pageNo;
 	}
@@ -172,6 +180,9 @@ class IdPage {
 	}
 	getSize() {
 		return this.size;
+	}
+	isLeaf() {
+		return this.type === 'LEAF';
 	}
 	setPageNo(pageNo) {
 		this.pageNo = pageNo;
@@ -214,7 +225,7 @@ class IdPage {
 		})
 	}
 
-	setRootPage(rootPageNo) {
+	static setRootPage(rootPageNo) {
 		let pageData = Buffer.alloc(PAGE_SIZE);
 		pageData.writeInt32LE(rootPageNo);
 
@@ -265,6 +276,24 @@ class IdPage {
 	static getPageSize() {
 		const stat = fs.statSync(INDEXPATH);
 		return stat.size / PAGE_SIZE
+	}
+
+	static getLeafNo() {
+		let pageOne = Buffer.alloc(PAGE_SIZE);
+		return new Promise((resolve, reject)=> {
+			fs.open(INDEXPATH, 'r', (err, file)=> {
+				if(err) {
+					return reject(err)
+				}
+				fs.read(file, pageOne, 0, PAGE_SIZE, 0, (err, data)=> {
+				let leafNo = data.readInt32LE(4);
+				if(err) {
+					return reject(err);
+				}
+				resolve(leafNo)
+			})
+			})
+		})
 	}
 
 	flush() {
