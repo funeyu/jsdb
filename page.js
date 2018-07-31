@@ -163,11 +163,19 @@ class IdPage {
 		this.size = 0;
 	}
 
-	getPageNoById(id) {
-		if(this.isLeaf()) {
+	getChildNoById(id) {
+		let cellByteSize = this.size * 8;
+		// sizeOf(paegParent) + sizeOf(size) + sizeOf(pageNo)
+		let cellByteBegin = (4 + 2 + 4);
+		let cellByteBuffer = Buffer.from(this.data, cellByteBegin, cellByteBegin + cellByteBuffer);
 
+		let minIndex = 0, maxIndex = this.size;
+		let minId = cellByteBuffer.readInt32LE(),
+			maxId = cellByteBuffer.readInt32LE(cellByteBegin + cellByteSize - 4);
+
+		if(minId > id || maxId < id) {
+			return
 		}
-
 		
 	}
 
