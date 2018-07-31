@@ -163,7 +163,7 @@ class IdPage {
 		this.size = 0;
 	}
 
-	getChildNoById(id) {
+	getChildPageNo(id) {
 		let cellByteSize = this.size * 8;
 		// sizeOf(paegParent) + sizeOf(size) + sizeOf(pageNo)
 		let cellByteBegin = (4 + 2 + 4);
@@ -176,7 +176,20 @@ class IdPage {
 		if(minId > id || maxId < id) {
 			return
 		}
-		
+
+		while((maxIndex - minIndex) > 1) {
+			let middle = Math.floor((minIndex + maxIndex) / 2);
+			let middleId = cellByteBuffer.readInt32LE(cellByteBegin + middle * 8 - 4);
+			if(middleId === id) {
+				return cellByteBuffer.readInt32LE(cellByteBegin + middle * 8 - 8);
+			} else if(middleId > id) {
+				maxIndex = middle;
+			} else if(middleId < id) {
+				minIndex = middle;
+			}
+		}
+
+		return cellByteBuffer.readInt32LE(cellByteBegin + maxIndex * 8 - 8);
 	}
 
 	getPageNo() {
@@ -215,7 +228,7 @@ class IdPage {
 		return this.offset - 4 - 2 - 4;
 	}
 
-	getRootPage() {
+	static getRootPage() {
 		let pageOne = Buffer.alloc(PAGE_SIZE);
 		return new Promise((resolve, reject)=> {
 			fs.open(INDEXPATH, 'r', (err, file)=> {

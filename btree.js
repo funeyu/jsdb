@@ -67,9 +67,13 @@ console.log(compare('key21', 'key2'));
 
 let currentDataPageNo = DataPage.getPageSize();
 let currentIdPageNo = IdPage.getPageSize();
-let currentLeafIdNo ;
+let currentLeafIdNo, rootIdPageNo;
 IdPage.getLeafNo().then(leafNo=> {
 	currentLeafIdNo = leafNo;
+})
+
+IdPage.getRootPage().then(rootNo=> {
+	rootIdPageNo = rootNo;
 })
 
 // pageData: {id: xxx, pageNo: xxxx}
@@ -131,8 +135,18 @@ const insertData = function(data) {
 	})
 }
 
-const getDataById = function(id, cb) {
-	
+const getDataById = function(id, cb, idPageNo) {
+	idPageNo = idPageNo || rootIdPageNo;
+	IdPage.load(idPageNo, function(idPage) {
+		let childPageNo = idPage.getChildPageNo(id);
+		if(idPage.isLeaf()) {
+			DataPage.load(childPageNo, function(dataPage) {
+				cb(null, dataPage);
+			});
+		} else {
+			getDataById(id, cb, childPageNo);
+		}
+	});
 }
 
 
