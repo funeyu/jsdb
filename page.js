@@ -132,6 +132,11 @@ class DataPage {
 	}
 }
 
+const ONE_CELL_BYTES = 8;
+const PAGEPARENT_BYTES_IN_CELL = 4;
+const PAGENO_BYTES = 4;
+const SIZENO_BYTES_IN_CELL = 2;
+const ID_SIZES = 4;
 class IdPage {
 	/*
 		the format of this kind page is :
@@ -164,24 +169,24 @@ class IdPage {
 	}
 
 	getChildPageNo(id) {
-		let cellByteSize = this.size * 8;
+		let cellByteSize = this.size * ONE_CELL_BYTES;
 		// sizeOf(paegParent) + sizeOf(size) + sizeOf(pageNo)
-		let cellByteBegin = (4 + 2 + 4);
+		let cellByteBegin = (PAGEPARENT_BYTES_IN_CELL + SIZENO_BYTES_IN_CELL + PAGENO_BYTES);
 		let cellByteBuffer = Buffer.from(this.data, cellByteBegin, cellByteBegin + cellByteBuffer);
 
 		let minIndex = 0, maxIndex = this.size;
 		let minId = cellByteBuffer.readInt32LE(),
-			maxId = cellByteBuffer.readInt32LE(cellByteBegin + cellByteSize - 4);
+			maxId = cellByteBuffer.readInt32LE(cellByteBegin + cellByteSize - ID_SIZES);
 
 		if(minId > id || maxId < id) {
 			return
 		}
 
 		while((maxIndex - minIndex) > 1) {
-			let middle = Math.floor((minIndex + maxIndex) / 2);
-			let middleId = cellByteBuffer.readInt32LE(cellByteBegin + middle * 8 - 4);
+			let middle = (minIndex + maxIndex) >> 1;
+			let middleId = cellByteBuffer.readInt32LE(cellByteBegin + middle * ONE_CELL_BYTES - ID_SIZES);
 			if(middleId === id) {
-				return cellByteBuffer.readInt32LE(cellByteBegin + middle * 8 - 8);
+				return cellByteBuffer.readInt32LE(cellByteBegin + (middle-1) * ONE_CELL_BYTES);
 			} else if(middleId > id) {
 				maxIndex = middle;
 			} else if(middleId < id) {
@@ -189,7 +194,7 @@ class IdPage {
 			}
 		}
 
-		return cellByteBuffer.readInt32LE(cellByteBegin + maxIndex * 8 - 8);
+		return cellByteBuffer.readInt32LE(cellByteBegin + (maxIndex-1) * ONE_CELL_BYTES);
 	}
 
 	getPageNo() {
