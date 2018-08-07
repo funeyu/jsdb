@@ -346,7 +346,7 @@ class IndexPage {
 		pageNo:      4b  // this page number
 		offset:      2b  // where this page write from 
 
-		cellSize:    2b  // size of one cell bytes
+		cellOffset:  2b  // one cell bytes offset
 		childPageNo: 4b  // cell pointers for its child page
 		id:          4b  // the key pair <key, id>
 		rawKey: 	 nb  // the raw data of key
@@ -370,6 +370,17 @@ class IndexPage {
 		this.data.writeInt16Le(this.offset, 1 + 4 + 2 + 4);
 		this.size = 0;
 		this.data.writeInt16Le(this.size, 5);  
+	}
+
+
+	freeData() {
+		return PAGE_SIZE - this.offset;
+	}
+
+	insertCell(key, id) {
+		let keyBytes = ByteSize(key);
+		let idBytes = ByteSize(id);
+
 	}
 }
 
