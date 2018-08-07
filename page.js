@@ -5,6 +5,8 @@ const Lru = require('lru-cache');
 const PAGE_SIZE = 1024;
 const FILEPATH = 'js.db';
 const INDEXPATH = 'js.index';
+const PAGE_TYPE_ID = 1;
+const PAGE_TYPE_INDEX = 2;
 
 const ByteSize = function(str) {
 	str = str.toString();
@@ -329,6 +331,47 @@ class IdPage {
 	}
 }
 
+class IndexPage {
+	/*
+		the format of this kind page is :
+		--------------------------------------------------------------------------------------
+		| type |  pageParent  |  size  |  pageNo  | offset | [cell1, cell2, cell3, cell4 ......]
+		--------------------------------------------------------------------------------------
+		every cell is : cellSize + childPageNo + id + rawKey
+
+		the size of the filed above is:
+		type: 		 1b  // this page type
+		pageParent:  4b  // this page's parent page number
+		size:        2b  // the size of cell
+		pageNo:      4b  // this page number
+		offset:      2b  // where this page write from 
+
+		cellSize:    2b  // size of one cell bytes
+		childPageNo: 4b  // cell pointers for its child page
+		id:          4b  // the key pair <key, id>
+		rawKey: 	 nb  // the raw data of key
+	*/
+	constructor(pageParent, pageNo) {
+		this.data = Buffer.alloc(PAGE_SIZE);
+		this.type = PAGE_TYPE_INDEX;
+		this.data.writeInt8Le(PAGE_TYPE_INDEX);
+
+		if(typeof pageParent === 'number') {
+			this.pageParent = pageParent;
+			this.data.writeInt32LE(pageParent, 1);
+		}
+		if(typeof pageNo === 'number') {
+			this.pageNo = pageNo;
+			this.data.writeInt32LE(pageNo, 7);
+			cache.set(pageNo, this);
+		}
+
+		this.offset = 1 + 4 + 2 + 4 + 2;
+		this.data.writeInt16Le(this.offset, 1 + 4 + 2 + 4);
+		this.size = 0;
+		this.data.writeInt16Le(this.size, 5);  
+	}
+}
 
 // let page = new DataPage(1);
 // page.insertCell(1, 'stringDataPage1');
