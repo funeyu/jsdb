@@ -1,6 +1,7 @@
 const fs = require('fs');
 
 const Lru = require('lru-cache');
+const {compare} = require('./utils.js')
 
 const PAGE_SIZE = 1024;
 const FILEPATH = 'js.db';
@@ -138,7 +139,7 @@ const ONE_CELL_BYTES = 8;
 const PAGEPARENT_BYTES_IN_CELL = 4;
 const PAGENO_BYTES = 4;
 const SIZENO_BYTES_IN_CELL = 2;
-const ID_SIZES = 4;
+const ID_BYTES = 4;
 class IdPage {
 	/*
 		the format of this kind page is :
@@ -178,7 +179,7 @@ class IdPage {
 
 		let minIndex = 0, maxIndex = this.size;
 		let minId = cellByteBuffer.readInt32LE(),
-			maxId = cellByteBuffer.readInt32LE(cellByteBegin + cellByteSize - ID_SIZES);
+			maxId = cellByteBuffer.readInt32LE(cellByteBegin + cellByteSize - ID_BYTES);
 
 		if(minId > id || maxId < id) {
 			return
@@ -186,7 +187,7 @@ class IdPage {
 
 		while((maxIndex - minIndex) > 1) {
 			let middle = (minIndex + maxIndex) >> 1;
-			let middleId = cellByteBuffer.readInt32LE(cellByteBegin + middle * ONE_CELL_BYTES - ID_SIZES);
+			let middleId = cellByteBuffer.readInt32LE(cellByteBegin + middle * ONE_CELL_BYTES - ID_BYTES);
 			if(middleId === id) {
 				return cellByteBuffer.readInt32LE(cellByteBegin + (middle-1) * ONE_CELL_BYTES);
 			} else if(middleId > id) {
@@ -321,7 +322,7 @@ class IdPage {
 				resolve(leafNo)
 			})
 			})
-		})
+		})                  
 	}
 
 	flush() {
@@ -331,6 +332,7 @@ class IdPage {
 	}
 }
 
+const INDEXPAGE_HEADER_SIZE = 1 + 4 + 2 + 4 + 2;
 class IndexPage {
 	/*
 		the format of this kind page is :
@@ -366,7 +368,7 @@ class IndexPage {
 			cache.set(pageNo, this);
 		}
 
-		this.offset = 1 + 4 + 2 + 4 + 2;
+		this.offset = PAGE_SIZE;
 		this.data.writeInt16Le(this.offset, 1 + 4 + 2 + 4);
 		this.size = 0;
 		this.data.writeInt16Le(this.size, 5);  
@@ -374,13 +376,99 @@ class IndexPage {
 
 
 	freeData() {
-		return PAGE_SIZE - this.offset;
+		return this.offset - INDEXPAGE_HEADER_SIZE - this.size * 2;
 	}
 
-	insertCell(key, id) {
-		let keyBytes = ByteSize(key);
-		let idBytes = ByteSize(id);
+	getCellByOffset(offset) {
+		let dataSize = this.data.readInt16LE(offset);
+		let data = Buffer.from(this.data, offset, dataSize);
+		let keySize = dataSize - ID_BYTES - PAGENO_BYTES;
+		let key = Buffer.from(data, 0, keySize).toString();
+		let id = Buffer.from(data, keySize, ID_BYTES).toString();
+		let childPageNo = Buffer.from(data, keySize + ID_BYTES, PAGENO_BYTES).toString();
 
+		return {key, id, childPageNo}
+	}
+
+	resortOffsetArray(offset, position) {
+		assert(position >= 0 && this.size >= position);
+		let halfBuffer = Buffer.from(this.data, 
+			INDEXPAGE_HEADER_SIZE + position * 2,
+			(this.size - position) * 2);
+
+		this.data.writeInt16Le(offset, INDEXPAGE_HEADER_SIZE + position * 2);
+		halfBuffer.copy(this.data, position*2 + 2, 0, (this.size - position) * 2);
+	}
+
+	// position starts from 0
+	__getOffsetByIndex(position) {
+		return this.data.readInt16LE(INDEXPAGE_HEADER_SIZE + position * 2);
+	}
+
+	insertCell(key, id, childPageNo) {
+		let keyByteSize = ByteSize(key);
+		this.offset -= (keyByteSize + ID_BYTES + PAGENO_BYTES);
+		this.data.write(key, this.offset);
+		this.data.writeInt32LE(id, this.offset + keyByteSize);
+		this.data.writeInt32LE(childPageNo, this.offset + keyByteSize + ID_BYTES);
+
+		if(this.size > 0) {
+			let minIndex = 0, maxIndex = (this.size - 1);
+
+			while(maxIndex > minIndex) {
+				let minOffset = this.__getOffsetByIndex(minIndex),
+			 	maxOffset = this.__getOffsetByIndex(maxIndex);
+
+				let minKey = this.getCellByOffset(minOffset)['key'];
+				let maxKey = this.getCellByOffset(maxOffset)['key'];
+				if(compare(minKey, key) > 0) { // key is smaller than minKey
+					this.resortOffsetArray(offset, minIndex);
+					return ;
+				} else if(compare(key, maxKey)) {
+					this.resortOffsetArray(offset, maxIndex);
+					return ;
+				} else {
+					let nextOffset = this.__getOffsetByIndex(minIndex + 1);
+					let nextKey = this.getCellByOffset(nextOffset)['key'];
+					let middleIndex = this.size >>1;
+					let middleOffset = this.__getOffsetByIndex(middleIndex);
+					let middleKey = this.getCellByOffset(middleOffset)['key'];
+
+					if(compare(nextKey, key) >= 0) { // find the correct position
+						this.resortOffsetArray(offset, minIndex);
+						return ;
+					}
+
+					if(compare(middleKey, key) > 0) {
+						maxIndex = middleIndex;
+					} else {
+						minIndex = middleIndex;
+					}
+
+				}
+			}
+			
+		}
+	}
+
+	half() {
+		let halfSize = this.size >> 1;
+		let splitInfo = [];
+		for(var i = halfSize; i < this.size; i ++) {
+			let offset = this.__getOffsetByIndex(i);
+			let cellInfo = this.getCellByOffset(offset);
+			splitInfo.append(cellInfo);
+		}
+
+		// rewrite the cells from begining
+		this.offset = PAGE_SIZE;
+		for(var i = 0; i < halfSize; i ++) {
+			let offset = this.__getOffsetByIndex(i);
+			let cellInfo = this.getCellByOffset(offset);
+			this.insertCell(cellInfo['key'], cellInfo['id'], cellInfo['childPageNo'])
+		}
+
+		return splitInfo;
 	}
 }
 
