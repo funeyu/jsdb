@@ -130,7 +130,7 @@ class DataPage {
 	}
 
 	static getPageSize() {
-		const stat = fs.statcSync(FILEPATH);
+		const stat = fs.statSync(FILEPATH);
 		return stat.size / PAGE_SIZE;
 	}
 }
@@ -244,7 +244,7 @@ class IdPage {
 					return reject(err)
 				}
 				fs.read(file, pageOne, 0, PAGE_SIZE, 0, (err, data)=> {
-				let rootPageNo = data.readInt32LE();
+				let rootPageNo = pageOne.readInt32LE();
 				if(err) {
 					return reject(err);
 				}
@@ -315,7 +315,7 @@ class IdPage {
 					return reject(err)
 				}
 				fs.read(file, pageOne, 0, PAGE_SIZE, 0, (err, data)=> {
-				let leafNo = data.readInt32LE(4);
+				let leafNo = pageOne.readInt32LE(4);
 				if(err) {
 					return reject(err);
 				}
@@ -356,7 +356,7 @@ class IndexPage {
 	constructor(pageParent, pageNo) {
 		this.data = Buffer.alloc(PAGE_SIZE);
 		this.type = PAGE_TYPE_INDEX;
-		this.data.writeInt8Le(PAGE_TYPE_INDEX);
+		this.data.writeInt8(PAGE_TYPE_INDEX);
 
 		if(typeof pageParent === 'number') {
 			this.pageParent = pageParent;
@@ -369,9 +369,9 @@ class IndexPage {
 		}
 
 		this.offset = PAGE_SIZE;
-		this.data.writeInt16Le(this.offset, 1 + 4 + 2 + 4);
+		this.data.writeInt16LE(this.offset, 1 + 4 + 2 + 4);
 		this.size = 0;
-		this.data.writeInt16Le(this.size, 5);  
+		this.data.writeInt16LE(this.size, 5);  
 	}
 
 
@@ -390,13 +390,17 @@ class IndexPage {
 		return {key, id, childPageNo}
 	}
 
+	getChildPageNo(key) {
+
+	}
+
 	resortOffsetArray(offset, position) {
 		assert(position >= 0 && this.size >= position);
 		let halfBuffer = Buffer.from(this.data, 
 			INDEXPAGE_HEADER_SIZE + position * 2,
 			(this.size - position) * 2);
 
-		this.data.writeInt16Le(offset, INDEXPAGE_HEADER_SIZE + position * 2);
+		this.data.writeInt16LE(offset, INDEXPAGE_HEADER_SIZE + position * 2);
 		halfBuffer.copy(this.data, position*2 + 2, 0, (this.size - position) * 2);
 	}
 
@@ -487,6 +491,7 @@ class IndexPage {
 
 exports.DataPage = DataPage;
 exports.IdPage = IdPage;
+exports.IndexPage = IndexPage;
 
 const st = function() {
 	let st = fs.statSync(INDEXPATH);

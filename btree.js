@@ -1,4 +1,4 @@
-const {DataPage, IdPage} = require('./page.js');
+const {DataPage, IdPage, IndexPage} = require('./page.js');
 const {compare} = require('./utils.js');
 
 // generate auto incresed id and the length of id : 6
@@ -49,7 +49,7 @@ IdPage.getRootPage().then(rootNo=> {
 })
 
 // pageData: {id: xxx, pageNo: xxxx}
-const insertrecursively(idPage, pageData) {
+const insertrecursively = function(idPage, pageData) {
 	let {id, pageNo} = pageData
 
 	let result = idPage.insertCell(id, pageNo);
@@ -121,7 +121,41 @@ const getDataById = function(id, cb, idPageNo) {
 	});
 }
 
+const rootPage = new IndexPage(null, 0);
+let IndexPageNo = 0;
 
+const insertKey = function(key, id, childPageNo) {
+
+}
+
+const keys = [1, 3, 4,  8, 33, 234, 256, 432]
+const diveIntoLeaf = function(key) {
+	let page = rootPage;
+	let min = 0, max = keys.length;
+
+	while(max > min) {
+		if(keys[min] >= key) {
+			return min;
+		}
+		if(keys[max] <= key) {
+			return max;
+		}
+		if(keys[min] < key && keys[min + 1] > key) {
+			return min;
+		}
+		let middle = (min + max) >>1;
+		if(keys[middle] > key) {
+			max = middle;
+		}
+		if(keys[middle] === key) {
+			return middle;
+		}
+		if(keys[middle] < key) {
+			min = middle;
+		}
+	}
+}
+console.log("diveIntoLeaf", diveIntoLeaf(80))
 const reblance = function() {
 
 }
