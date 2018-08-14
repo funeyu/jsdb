@@ -1,4 +1,8 @@
-const {DataPage, IdPage, IndexPage} = require('./page.js');
+const {DataPage, IdPage, IndexPage, 
+	PAGE_TYPE_INDEX_ROOT_LEAF, 
+	PAGE_TYPE_INDEX_ROOT, 
+	PAGE_TYPE_INDEX_LEAF
+} = require('./page.js');
 const {compare} = require('./utils.js');
 
 // generate auto incresed id and the length of id : 6
@@ -121,11 +125,29 @@ const getDataById = function(id, cb, idPageNo) {
 	});
 }
 
-const rootPage = new IndexPage(null, 0);
+const rootPage = new IndexPage(null, 0, PAGE_TYPE_INDEX_ROOT_LEAF);
 let IndexPageNo = 0;
 
 const insertKey = function(key, id, childPageNo) {
+	let deepestPage = walkDeepest(key);
+	let hasRoom = deepestPage.hasRoomFor(key);
+	if(hasRoom) {
+		deepestPage.insertCell(key, id, childPageNo);
+		return ;
+	}
+	reblance(deepestPage, {key, id, childPageNo});
+}
 
+const walkDeepest = function(key) {
+	let startPage = rootPage;
+	while(startPage.getType() !== PAGE_TYPE_INDEX_LEAF){
+		startPage = startPage.getChildPageNo(key);
+	}
+	return startPage;
+}
+
+const reblance = function(startPage, indexInfo) {
+	
 }
 
 const keys = [1, 3, 4,  8, 33, 234, 256, 432]
@@ -156,6 +178,4 @@ const diveIntoLeaf = function(key) {
 	}
 }
 console.log("diveIntoLeaf", diveIntoLeaf(80))
-const reblance = function() {
 
-}

@@ -8,6 +8,9 @@ const FILEPATH = 'js.db';
 const INDEXPATH = 'js.index';
 const PAGE_TYPE_ID = 1;
 const PAGE_TYPE_INDEX = 2;
+const PAGE_TYPE_INDEX_LEAF = 4;
+const PAGE_TYPE_INDEX_ROOT = 8;
+const PAGE_TYPE_INDEX_ROOT_LEAF = 12;
 
 const ByteSize = function(str) {
 	str = str.toString();
@@ -353,10 +356,10 @@ class IndexPage {
 		id:          4b  // the key pair <key, id>
 		rawKey: 	 nb  // the raw data of key
 	*/
-	constructor(pageParent, pageNo) {
+	constructor(pageParent, pageNo, type) {
 		this.data = Buffer.alloc(PAGE_SIZE);
-		this.type = PAGE_TYPE_INDEX;
-		this.data.writeInt8(PAGE_TYPE_INDEX);
+		this.type = type;
+		this.data.writeInt8(type);
 
 		if(typeof pageParent === 'number') {
 			this.pageParent = pageParent;
@@ -391,8 +394,22 @@ class IndexPage {
 	}
 
 	getChildPageNo(key) {
+		if(this.type === PAGE_TYPE_INDEX_LEAF) {
+			reuturn this
+		}
 
 	}
+
+	getType() {
+		return this.type;
+	}
+
+	// true: this page has room for key, false: not 
+	hasRoomFor(key) {
+		let free = this.freeData, keySize = ByteSize(key);
+
+		return free >= keySize
+	}	
 
 	resortOffsetArray(offset, position) {
 		assert(position >= 0 && this.size >= position);
@@ -492,6 +509,9 @@ class IndexPage {
 exports.DataPage = DataPage;
 exports.IdPage = IdPage;
 exports.IndexPage = IndexPage;
+exports.PAGE_TYPE_INDEX_ROOT_LEAF = PAGE_TYPE_INDEX_ROOT_LEAF;
+exports.PAGE_TYPE_INDEX_ROOT = PAGE_TYPE_INDEX_ROOT;
+exports.PAGE_TYPE_INDEX_LEAF = PAGE_TYPE_INDEX_LEAF;
 
 const st = function() {
 	let st = fs.statSync(INDEXPATH);
