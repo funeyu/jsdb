@@ -1,9 +1,11 @@
 const {DataPage, IdPage, IndexPage, 
 	PAGE_TYPE_INDEX_ROOT_LEAF, 
 	PAGE_TYPE_INDEX_ROOT, 
-	PAGE_TYPE_INDEX_LEAF
+	PAGE_TYPE_INDEX_LEAF,
+	PAGE_TYPE_INDEX_INTERNAL
 } = require('./page.js');
 const {compare} = require('./utils.js');
+const MIN_KEY = -1
 
 // generate auto incresed id and the length of id : 6
 let count = 0; // less than 256 * 256
@@ -147,7 +149,25 @@ const walkDeepest = function(key) {
 }
 
 const reblance = function(startPage, indexInfo) {
-	
+	if(startPage.hasRoomFor(indexInfo.key)) {
+		startPage.insertCell(indexInfo.key, indexInfo.id, indexInfo.childPageNo);
+	} else {
+		if(startPage.isRoot()) {
+			let rootPageNo = ++IndexPageNo;
+			let rootNewPage = new IndexPage(null, rootPageNo, PAGE_TYPE_INDEX_ROOT);
+			let splitPage = new IndexPage(rootPage, ++IndexPage, PAGE_TYPE_INDEX_INTERNAL);
+
+			let splice = startPage.half();
+			splice.forEach(s=> {
+				splitPage.insertCell(s.key, s.id, s.childPageNo);
+			});
+
+			rootNewPage.insertCell(MIN_KEY, null, startPage.getPageNo());
+			rootNewPage.insertCell(indexInfo.key, indexInfo.id, indexInfo.childPageNo);
+		} else {
+			
+		}
+	}
 }
 
 const keys = [1, 3, 4,  8, 33, 234, 256, 432]

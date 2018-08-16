@@ -11,6 +11,7 @@ const PAGE_TYPE_INDEX = 2;
 const PAGE_TYPE_INDEX_LEAF = 4;
 const PAGE_TYPE_INDEX_ROOT = 8;
 const PAGE_TYPE_INDEX_ROOT_LEAF = 12;
+const PAGE_TYPE_INDEX_INTERNAL = 14;
 
 const ByteSize = function(str) {
 	str = str.toString();
