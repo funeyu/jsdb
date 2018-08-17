@@ -473,20 +473,35 @@ class IndexPage {
 		}
 	}
 
-	half() {
-		let halfSize = this.size >> 1;
-		let splitInfo = [];
-		for(var i = halfSize; i < this.size; i ++) {
+	// split into half by a indexPair
+	half(insertCellInfo) {
+		let {key, id, childPageNo} = insertCellInfo;
+		let tempArray = [];
+		let totalSize = this.size + 1;
+		for(var i = 0; i < totalSize; i ++) {
 			let offset = this.__getOffsetByIndex(i);
 			let cellInfo = this.getCellByOffset(offset);
-			splitInfo.append(cellInfo);
+			if(compare(cellInfo.key, key) < 0) {
+				tempArray.push(cellInfo);
+				if(i === this.size) {
+					tempArray.push(insertCellInfo);
+				}
+			} else {
+				tempArray.push(insertCellInfo);
+				tempArray.push(cellInfo);
+			}
+		}
+
+		let halfSize = totalSize >> 1;
+		let splitInfo = [];
+		for(var i = halfSize; i < totalSize; i ++) {
+			splitInfo.append(tempArray[i]);
 		}
 
 		// rewrite the cells from begining
 		this.offset = PAGE_SIZE;
 		for(var i = 0; i < halfSize; i ++) {
-			let offset = this.__getOffsetByIndex(i);
-			let cellInfo = this.getCellByOffset(offset);
+			let cellInfo = tempArray(i);
 			this.insertCell(cellInfo['key'], cellInfo['id'], cellInfo['childPageNo'])
 		}
 

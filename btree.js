@@ -152,20 +152,24 @@ const reblance = function(startPage, indexInfo) {
 	if(startPage.hasRoomFor(indexInfo.key)) {
 		startPage.insertCell(indexInfo.key, indexInfo.id, indexInfo.childPageNo);
 	} else {
+		let splices = startPage.half(indexInfo);
+		let middleCellInfo = splices.shift();
+		let splitPage = new IndexPage(rootPage, ++IndexPage, PAGE_TYPE_INDEX_INTERNAL);
+		middleCellInfo.childPageNo = splitPage.getPageNo();
+
 		if(startPage.isRoot()) {
 			let rootPageNo = ++IndexPageNo;
 			let rootNewPage = new IndexPage(null, rootPageNo, PAGE_TYPE_INDEX_ROOT);
-			let splitPage = new IndexPage(rootPage, ++IndexPage, PAGE_TYPE_INDEX_INTERNAL);
 
-			let splice = startPage.half();
-			splice.forEach(s=> {
+			splices.forEach(s=> {
 				splitPage.insertCell(s.key, s.id, s.childPageNo);
 			});
 
 			rootNewPage.insertCell(MIN_KEY, null, startPage.getPageNo());
-			rootNewPage.insertCell(indexInfo.key, indexInfo.id, indexInfo.childPageNo);
+			rootNewPage.insertCell(middleCellInfo.key, middleCellInfo.id, middleCellInfo.childPageNo);
 		} else {
-			
+			let parentPage = startPage.getPageParent();
+			reblance(parentPage, middleCellInfo);
 		}
 	}
 }
