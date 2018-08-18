@@ -1,11 +1,12 @@
 const {DataPage, IdPage, IndexPage, 
-	PAGE_TYPE_INDEX_ROOT_LEAF, 
-	PAGE_TYPE_INDEX_ROOT, 
-	PAGE_TYPE_INDEX_LEAF,
-	PAGE_TYPE_INDEX_INTERNAL
+	PAGE_TYPE_ID, 
+	PAGE_TYPE_INDEX, 
+	PAGE_TYPE_ROOT,
+	PAGE_TYPE_INTERNAL,
+	PAGE_TYPE_LEAF
 } = require('./page.js');
 const {compare} = require('./utils.js');
-const MIN_KEY = -1
+const MIN_KEY = '-1'
 
 // generate auto incresed id and the length of id : 6
 let count = 0; // less than 256 * 256
@@ -127,12 +128,14 @@ const getDataById = function(id, cb, idPageNo) {
 	});
 }
 
-const rootPage = new IndexPage(null, 0, PAGE_TYPE_INDEX_ROOT_LEAF);
+const rootPage = new IndexPage(null, 0, 
+	PAGE_TYPE_INDEX |PAGE_TYPE_ROOT | PAGE_TYPE_LEAF);
 let IndexPageNo = 0;
 
 const insertKey = function(key, id, childPageNo) {
 	let deepestPage = walkDeepest(key);
 	let hasRoom = deepestPage.hasRoomFor(key);
+	console.log('hasRoom', hasRoom, 'no', deepestPage.getPageNo())
 	if(hasRoom) {
 		deepestPage.insertCell(key, id, childPageNo);
 		return ;
@@ -140,11 +143,15 @@ const insertKey = function(key, id, childPageNo) {
 	reblance(deepestPage, {key, id, childPageNo});
 }
 
+const deleteKey = function(key) {
+
+}
+
 const walkDeepest = function(key) {
 	let startPage = rootPage;
-	while(startPage.getType() !== PAGE_TYPE_INDEX_LEAF){
-		startPage = startPage.getChildPageNo(key);
-	}
+	// while(startPage.getType() & PAGE_TYPE_LEAF){
+	// 	startPage = startPage.getChildPageNo(key);
+	// }
 	return startPage;
 }
 
@@ -154,18 +161,21 @@ const reblance = function(startPage, indexInfo) {
 	} else {
 		let splices = startPage.half(indexInfo);
 		let middleCellInfo = splices.shift();
-		let splitPage = new IndexPage(rootPage, ++IndexPage, PAGE_TYPE_INDEX_INTERNAL);
+		let splitPage = new IndexPage(rootPage, ++IndexPageNo, 
+			(PAGE_TYPE_INDEX | PAGE_TYPE_INTERNAL));
 		middleCellInfo.childPageNo = splitPage.getPageNo();
 
 		if(startPage.isRoot()) {
 			let rootPageNo = ++IndexPageNo;
-			let rootNewPage = new IndexPage(null, rootPageNo, PAGE_TYPE_INDEX_ROOT);
+			let rootNewPage = new IndexPage(null, rootPageNo, 
+				(PAGE_TYPE_INDEX | PAGE_TYPE_ROOT));
 
 			splices.forEach(s=> {
 				splitPage.insertCell(s.key, s.id, s.childPageNo);
 			});
 
 			rootNewPage.insertCell(MIN_KEY, null, startPage.getPageNo());
+			console.log('middleCellInfo')
 			rootNewPage.insertCell(middleCellInfo.key, middleCellInfo.id, middleCellInfo.childPageNo);
 		} else {
 			let parentPage = startPage.getPageParent();
@@ -202,4 +212,12 @@ const diveIntoLeaf = function(key) {
 	}
 }
 console.log("diveIntoLeaf", diveIntoLeaf(80))
+
+var keyss = ['java', 'nodejs', 'eclipse', 'webstorm', 'c', 'go', 'window', 'linux', 'mac', 'blockchain']
+for(var i = 1; i < 10; i ++) {
+	insertKey(keyss[i], i, i*10);
+}
+console.log(rootPage)
+
+console.log('window:', rootPage.findId('eclipse'))
 
