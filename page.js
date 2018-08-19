@@ -70,7 +70,8 @@ class DataPage {
 
 	getCell(id) {
 		fs.open('js.db', 'r', (err, file)=> {
-			fs.read(file, this.data, 0, PAGE_SIZE, this.pageNo * PAGE_SIZE, (err, data)=> {
+			fs.read(file, this.data, 0, PAGE_SIZE, this.pageNo * PAGE_SIZE,
+                (err, data)=> {
 				let size = this.data.readInt32LE();
 
 				let maxId = this.data.readInt32LE(size*8 - 4);
@@ -126,7 +127,8 @@ class DataPage {
 
 		page = new DataPage(pageNo);
 		fs.open('js.db', 'r', (err, file)=> {
-			fs.read(file, page.data, 0, PAGE_SIZE, pageNo * PAGE_SIZE, (err, data)=> {
+			fs.read(file, page.data, 0, PAGE_SIZE, pageNo * PAGE_SIZE,
+                (err, data)=> {
 				cache.set(pageNo + '_Data', page);
 				
 				cb(err, page);
@@ -180,12 +182,15 @@ class IdPage {
 	getChildPageNo(id) {
 		let cellByteSize = this.size * ONE_CELL_BYTES;
 		// sizeOf(paegParent) + sizeOf(size) + sizeOf(pageNo)
-		let cellByteBegin = (PAGEPARENT_BYTES_IN_CELL + SIZENO_BYTES_IN_CELL + PAGENO_BYTES);
-		let cellByteBuffer = this.data.slice(cellByteBegin, cellByteBegin + cellByteBuffer);
+		let cellByteBegin =
+            (PAGEPARENT_BYTES_IN_CELL + SIZENO_BYTES_IN_CELL + PAGENO_BYTES);
+		let cellByteBuffer = this.data.slice(cellByteBegin,
+                cellByteBegin + cellByteBuffer);
 
 		let minIndex = 0, maxIndex = this.size;
-		let minId = cellByteBuffer.readInt32LE(),
-			maxId = cellByteBuffer.readInt32LE(cellByteBegin + cellByteSize - ID_BYTES);
+		let minId = cellByteBuffer.readInt32LE(0),
+			maxId = cellByteBuffer.readInt32LE(
+			    cellByteBegin + cellByteSize - ID_BYTES);
 
 		if(minId > id || maxId < id) {
 			return
@@ -193,9 +198,11 @@ class IdPage {
 
 		while((maxIndex - minIndex) > 1) {
 			let middle = (minIndex + maxIndex) >> 1;
-			let middleId = cellByteBuffer.readInt32LE(cellByteBegin + middle * ONE_CELL_BYTES - ID_BYTES);
+			let middleId = cellByteBuffer.readInt32LE(
+                cellByteBegin + middle * ONE_CELL_BYTES - ID_BYTES);
 			if(middleId === id) {
-				return cellByteBuffer.readInt32LE(cellByteBegin + (middle-1) * ONE_CELL_BYTES);
+				return cellByteBuffer.readInt32LE(
+				    cellByteBegin + (middle-1) * ONE_CELL_BYTES);
 			} else if(middleId > id) {
 				maxIndex = middle;
 			} else if(middleId < id) {
@@ -203,7 +210,8 @@ class IdPage {
 			}
 		}
 
-		return cellByteBuffer.readInt32LE(cellByteBegin + (maxIndex-1) * ONE_CELL_BYTES);
+		return cellByteBuffer.readInt32LE(
+		    cellByteBegin + (maxIndex-1) * ONE_CELL_BYTES);
 	}
 
 	getPageNo() {
@@ -262,7 +270,7 @@ class IdPage {
 
 	static setRootPage(rootPageNo) {
 		let pageData = Buffer.alloc(PAGE_SIZE);
-		pageData.writeInt32LE(rootPageNo);
+		pageData.writeInt32LE(rootPageNo, 0);
 
 		fs.open(INDEXPATH, 'w', (err, file)=> {
 			fs.writeSync(file, pageData, 0, PAGE_SIZE, 0);
@@ -286,7 +294,8 @@ class IdPage {
 	static load(pageNo, cb) {
 		let page = new IdPage();
 		fs.open(INDEXPATH, 'r', (err, file)=> {
-			fs.read(file, page.data, 0, PAGE_SIZE, pageNo * PAGE_SIZE, (err, data)=> {
+			fs.read(file, page.data, 0, PAGE_SIZE, pageNo * PAGE_SIZE,
+                (err, data)=> {
 				let pageParent = page.data.readInt32LE(0);
 				let size = page.data.readInt16LE(4);
 				let pageNo = page.data.readInt32LE(6);
@@ -418,10 +427,10 @@ class IndexPage {
 		let keyBuffer = data.slice(0, keySize);
 		let key = keyBuffer.toString();
 		let idBuffer = data.slice(keySize, ID_BYTES + keySize);
-		let id = idBuffer.readInt32LE();
+		let id = idBuffer.readInt32LE(0);
 		let childPageNoBuffer = data.slice(
 			keySize + ID_BYTES, PAGENO_BYTES + ID_BYTES + keySize);
-		let childPageNo = childPageNoBuffer.readInt16LE();
+		let childPageNo = childPageNoBuffer.readInt16LE(0);
 
 		return {key, id, childPageNo}
 	}
@@ -470,8 +479,8 @@ class IndexPage {
 		while(minIndex < maxIndex) {
 			let minCellInfo = this.getCellInfoByIndex(minIndex);
 			let maxCellInfo = this.getCellInfoByIndex(maxIndex);
-			// assert(compare(minCellInfo.key, key) <= 0);
-			// assert(compare(maxCellInfo.key, key) >= 0);
+			assert(compare(minCellInfo.key, key) <= 0);
+			assert(compare(maxCellInfo.key, key) >= 0);
 
 			let middle = (minIndex + maxIndex) >> 1;
 			let middleCellInfo = this.getCellInfoByIndex(middle);
@@ -508,12 +517,15 @@ class IndexPage {
 
 	insertCell(key, id, childPageNo) {
 		let keyByteSize = ByteSize(key);
-		let totalByteSize = CELLDATA_BYTE_SIZE + keyByteSize + ID_BYTES + PAGENO_BYTES;
+		let totalByteSize =
+            CELLDATA_BYTE_SIZE + keyByteSize + ID_BYTES + PAGENO_BYTES;
 		this.offset -= totalByteSize;
 		this.data.writeInt16LE(totalByteSize - CELLDATA_BYTE_SIZE, this.offset);
 		this.data.write(key, this.offset + CELLDATA_BYTE_SIZE);
-		this.data.writeInt32LE(id, this.offset + CELLDATA_BYTE_SIZE + keyByteSize);
-		this.data.writeInt32LE(childPageNo, this.offset + CELLDATA_BYTE_SIZE + keyByteSize + ID_BYTES);
+		this.data.writeInt32LE(id,
+            this.offset + CELLDATA_BYTE_SIZE + keyByteSize);
+		this.data.writeInt32LE(childPageNo,
+            this.offset + CELLDATA_BYTE_SIZE + keyByteSize + ID_BYTES);
 
 		if(this.size > 0) {
 			if(this.size === 1) {
@@ -542,9 +554,10 @@ class IndexPage {
 					return ;
 				} else {
 					let middleIndex = (minIndex + maxIndex) >>1;
-					let middleKey = this.getCellInfoByIndex(middleCellInfo)['key'];
+					let middleKey = this.getCellInfoByIndex(middleIndex)['key'];
 
-					if(compare(middleCellInfo, key) >= 0) { // find the correct position
+                    // find the correct position
+					if(compare(middleIndex, key) >= 0) {
 						this.resortOffsetArray(this.offset, minIndex);
 						return ;
 					}
@@ -608,7 +621,8 @@ class IndexPage {
 		this.offset = PAGE_SIZE;
 		for(var i = 0; i < halfSize; i ++) {
 			let cellInfo = tempArray[i];
-			this.insertCell(cellInfo['key'], cellInfo['id'], cellInfo['childPageNo'])
+			this.insertCell(cellInfo['key'], cellInfo['id'],
+                cellInfo['childPageNo']);
 		}
 
 		return splitInfo;
@@ -642,3 +656,6 @@ const st = function() {
 	console.log('st.size:', st.size)
 }
 st();
+
+cache.set('jva', {java: 'nodejs'});
+console.log(cache.get('jva'))
