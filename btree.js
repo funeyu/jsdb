@@ -147,17 +147,21 @@ const deleteKey = function(key) {
 
 }
 
-const walkDeepest = function(key) {
+const walkDeepest = async(key)=> {
 	let startPage = rootPage;
-	// while(startPage.getType() & PAGE_TYPE_LEAF){
-	// 	startPage = startPage.getChildPageNo(key);
-	// }
+	while(! startPage.getType() & PAGE_TYPE_LEAF){
+		startPage = await startPage.getChildPage(key);
+	}
 	return startPage;
 }
 
 const reblance = function(startPage, indexInfo) {
 	if(startPage.hasRoomFor(indexInfo.key)) {
-		startPage.insertCell(indexInfo.key, indexInfo.id, indexInfo.childPageNo);
+		startPage.insertCell(
+			indexInfo.key,
+			indexInfo.id,
+			indexInfo.childPageNo
+		);
 	} else {
 		let splices = startPage.half(indexInfo);
 		let middleCellInfo = splices.shift();
@@ -176,7 +180,11 @@ const reblance = function(startPage, indexInfo) {
 
 			rootNewPage.insertCell(MIN_KEY, null, startPage.getPageNo());
 			console.log('middleCellInfo')
-			rootNewPage.insertCell(middleCellInfo.key, middleCellInfo.id, middleCellInfo.childPageNo);
+			rootNewPage.insertCell(
+				middleCellInfo.key,
+				middleCellInfo.id,
+				middleCellInfo.childPageNo
+			);
 		} else {
 			let parentPage = startPage.getPageParent();
 			reblance(parentPage, middleCellInfo);

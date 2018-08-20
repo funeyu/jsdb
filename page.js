@@ -151,9 +151,9 @@ const ID_BYTES = 4;
 class IdPage {
 	/*
 		the format of this kind page is :
-		-----------------------------------------------------------------------
-		|  pageParent  |  size  |  pageNo | [cell1, cell2, cell3, cell4 ......]
-		-----------------------------------------------------------------------
+		---------------------------------------------------------------
+		|  pageParent  |  size  |  pageNo | [cell1, cell2, cell3 ......]
+		---------------------------------------------------------------
 		every cell is : childPageNo + id
 
 		the size of the filed above is:
@@ -185,7 +185,7 @@ class IdPage {
 		let cellByteBegin =
             (PAGEPARENT_BYTES_IN_CELL + SIZENO_BYTES_IN_CELL + PAGENO_BYTES);
 		let cellByteBuffer = this.data.slice(cellByteBegin,
-                cellByteBegin + cellByteBuffer);
+                cellByteBegin + cellByteSize);
 
 		let minIndex = 0, maxIndex = this.size;
 		let minId = cellByteBuffer.readInt32LE(0),
@@ -219,7 +219,7 @@ class IdPage {
 	}
 
 	getPageParent() {
-		return this.paegParent;
+		return this.pageParent;
 	}
 	getSize() {
 		return this.size;
@@ -352,9 +352,9 @@ const CELLDATA_BYTE_SIZE = 2;
 class IndexPage {
 	/*
 		the format of this kind page is :
-		--------------------------------------------------------------------------------------
-		| type |  pageParent  |  size  |  pageNo  | offset | [cell1, cell2, cell3, cell4 ......]
-		--------------------------------------------------------------------------------------
+-------------------------------------------------------------------------
+| type |  pageParent  |  size  |  pageNo  | offset | [cell1, cell2......]
+-------------------------------------------------------------------------
 		every cell is : cellSize + childPageNo + id + rawKey
 
 		the size of the filed above is:
@@ -371,8 +371,12 @@ class IndexPage {
 	*/
 	constructor(pageParent, pageNo, type) {
 		this.data = Buffer.alloc(PAGE_SIZE);
+		if(!pageParent && !pageNo && !type) {
+		    return;
+        }
+
 		this.type = type;
-		this.data.writeInt8(type);
+		this.data.writeInt8(type, 0);
 
 		if(typeof pageParent === 'number') {
 			this.pageParent = pageParent;
@@ -399,6 +403,10 @@ class IndexPage {
 		return this.type;
 	}
 
+	setType(type) {
+	    this.type = type;
+    }
+
 	// true: this page has room for key, false: not 
 	hasRoomFor(key) {
 		let free = this.freeData(), keySize = ByteSize(key);
@@ -406,13 +414,33 @@ class IndexPage {
 		return free >= keySize
 	}	
 
-	getParentPage() {
-
+	getParentPage(pageNo) {
+        this.pageParent = pageNo;
 	}
+
+	setPageNo(pageNo) {
+	    this.pageNo = pageNo;
+    }
+
+    setSize(size) {
+	    this.size = size;
+    }
+
+    getSize() {
+	    return this.size;
+    }
 
 	getPageNo() {
 		return this.pageNo;
 	}
+
+	setOffset(offset) {
+	    this.offset = offset;
+    }
+
+    getOffset() {
+	    return this.offset;
+    }
 
 	isRoot() {
 		return this.type & PAGE_TYPE_ROOT;
@@ -440,7 +468,8 @@ class IndexPage {
 		
 		let dataCopy = Buffer.from(this.data);
 		// this.data.slice share the same buffer with this.data
-		// let halfBuffer = this.data.slice(INDEXPAGE_HEADER_SIZE + position * 2, 
+		// let halfBuffer = this.data.slice(
+        //      INDEXPAGE_HEADER_SIZE + position * 2,
 		// 		INDEXPAGE_HEADER_SIZE + this.size * 2);
 		let halfBuffer = dataCopy.slice(INDEXPAGE_HEADER_SIZE + position * 2,
 				INDEXPAGE_HEADER_SIZE + this.size * 2);
@@ -504,6 +533,33 @@ class IndexPage {
 	}
 
 	static LoadPage(pageNo) {
+        let page = new IndexPage();
+        return new Promise((resolve, reject)=> {
+            fs.open(INDEXPATH, 'r', (err, file)=> {
+                if(err) {
+                    return reject(err);
+                }
+
+                fs.read(file, page.data, 0, PAGE_SIZE, pageNo * PAGE_SIZE,
+                    (err, data)=> {
+                        if(err) {
+                            return reject(err);
+                        }
+                        let type = page.data.readInt8(0);
+                        page.setType(type);
+                        let pageParent = page.data.readInt32LE(1);
+                        page.setPageNo(pageParent);
+                        let size = page.data.readInt16LE(1+4);
+                        page.setSize(size);
+                        let pageNo = page.data.readInt32LE(1+4+2);
+                        page.setPageNo(pageNo);
+                        let offset = page.data.readInt16LE(1+4+2+2);
+                        page.setOffset(offset);
+
+                        resolve(page);
+                    })
+            })
+        })
 
 	} 
 
@@ -577,6 +633,20 @@ class IndexPage {
 		}
 	}
 
+    flushToDisk() {
+	    return new Promise((resolve, reject)=> {
+	        fs.open(INDEXPATH, 'w', (err, file)=> {
+	            if(err) {
+	                return reject(err);
+                }
+
+                fs.writeSync(file, this.data, 0, PAGE_SIZE,
+                    this.pageNo * PAGE_SIZE )
+                resolve(null);
+            })
+        })
+    }
+
 	getChildPage(key) {
 		if(this.type & PAGE_TYPE_LEAF) {
 			return new Promise().resolve(this);
@@ -589,7 +659,6 @@ class IndexPage {
 		} else {
 			return IndexPage.LoadPage(cellInfo.childPageNo);
 		}
-
 	}
 
 	// split into half by a indexPair
