@@ -508,8 +508,8 @@ class IndexPage {
 		while(minIndex < maxIndex) {
 			let minCellInfo = this.getCellInfoByIndex(minIndex);
 			let maxCellInfo = this.getCellInfoByIndex(maxIndex);
-			assert(compare(minCellInfo.key, key) <= 0);
-			assert(compare(maxCellInfo.key, key) >= 0);
+			// assert(compare(minCellInfo.key, key) <= 0);
+			// assert(compare(maxCellInfo.key, key) >= 0);
 
 			let middle = (minIndex + maxIndex) >> 1;
 			let middleCellInfo = this.getCellInfoByIndex(middle);
@@ -588,7 +588,7 @@ class IndexPage {
 				let onlyKey = this.getCellInfoByIndex(0)['key'];
 				if(compare(key, onlyKey) > 0) {
 					this.resortOffsetArray(this.offset, 1);
-				} else if(compare(key, onlyKey) <= 0) {
+				} else {
 					this.resortOffsetArray(this.offset, 0);
 				}
 				return;
@@ -605,16 +605,17 @@ class IndexPage {
 				if(compare(minKey, key) > 0) { // key is smaller than minKey
 					this.resortOffsetArray(this.offset, minIndex);
 					return ;
-				} else if(compare(key, maxKey)) {
+				} else if(compare(key, maxKey) >= 0) {
 					this.resortOffsetArray(this.offset, maxIndex + 1);
 					return ;
 				} else {
 					let middleIndex = (minIndex + maxIndex) >>1;
 					let middleKey = this.getCellInfoByIndex(middleIndex)['key'];
-
+                    let nextKey = this.getCellInfoByIndex(middleIndex + 1)['key'];
                     // find the correct position
-					if(compare(middleIndex, key) >= 0) {
-						this.resortOffsetArray(this.offset, minIndex);
+					if(compare(nextKey, key) > 0
+                        && compare(middleKey, key) <= 0) {
+						this.resortOffsetArray(this.offset, middleIndex + 1);
 						return ;
 					}
 

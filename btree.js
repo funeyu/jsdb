@@ -132,8 +132,9 @@ const rootPage = new IndexPage(null, 0,
 	PAGE_TYPE_INDEX |PAGE_TYPE_ROOT | PAGE_TYPE_LEAF);
 let IndexPageNo = 0;
 
-const insertKey = function(key, id, childPageNo) {
-	let deepestPage = walkDeepest(key);
+const insertKey = async(key, id, childPageNo)=> {
+	let deepestPage = await walkDeepest(key);
+
 	let hasRoom = deepestPage.hasRoomFor(key);
 	console.log('hasRoom', hasRoom, 'no', deepestPage.getPageNo())
 	if(hasRoom) {
@@ -141,6 +142,8 @@ const insertKey = function(key, id, childPageNo) {
 		return ;
 	}
 	reblance(deepestPage, {key, id, childPageNo});
+
+
 }
 
 const deleteKey = function(key) {
@@ -192,40 +195,21 @@ const reblance = function(startPage, indexInfo) {
 	}
 }
 
-const keys = [1, 3, 4,  8, 33, 234, 256, 432]
-const diveIntoLeaf = function(key) {
-	let page = rootPage;
-	let min = 0, max = keys.length;
-
-	while(max > min) {
-		if(keys[min] >= key) {
-			return min;
-		}
-		if(keys[max] <= key) {
-			return max;
-		}
-		if(keys[min] < key && keys[min + 1] > key) {
-			return min;
-		}
-		let middle = (min + max) >>1;
-		if(keys[middle] > key) {
-			max = middle;
-		}
-		if(keys[middle] === key) {
-			return middle;
-		}
-		if(keys[middle] < key) {
-			min = middle;
-		}
-	}
-}
-console.log("diveIntoLeaf", diveIntoLeaf(80))
-
 var keyss = ['java', 'nodejs', 'eclipse', 'webstorm', 'c', 'go', 'window', 'linux', 'mac', 'blockchain']
-for(var i = 1; i < 10; i ++) {
-	insertKey(keyss[i], i, i*10);
+var keys = [];
+for(var i = 0; i < 100; i ++) {
+	keyss.forEach(k=> keys.push(k + i));
 }
-console.log(rootPage)
+var test = async()=> {
+    for(var i = 1; i < 10; i ++) {
+    	console.log('keys', keys[i])
+        await insertKey(keyss[i], i, i*10);
+    }
+}
 
-console.log('window:', rootPage.findId('eclipse'))
+console.log(rootPage)
+test().then(()=> {
+    console.log('window:', rootPage.findId('webstorm'))
+})
+
 
