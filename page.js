@@ -394,6 +394,9 @@ class IndexPage {
 		this.data.writeInt16LE(this.size, 5);  
 	}
 
+	oneCellBytes(key) {
+	    return ByteSize(key) + PAGENO_BYTES + CELLDATA_BYTE_SIZE + ID_BYTES;
+    }
 
 	freeData() {
 		return this.offset - INDEXPAGE_HEADER_SIZE - this.size * 2;
@@ -409,9 +412,9 @@ class IndexPage {
 
 	// true: this page has room for key, false: not 
 	hasRoomFor(key) {
-		let free = this.freeData(), keySize = ByteSize(key);
+		let free = this.freeData(), oneCellBytes = this.oneCellBytes(key);
 
-		return free >= keySize
+		return free >= oneCellBytes
 	}	
 
 	getParentPage(pageNo) {
@@ -446,7 +449,12 @@ class IndexPage {
 		return this.type & PAGE_TYPE_ROOT;
 	}
 
-	getCellByOffset(offset) {
+	isLeaf(){
+		return this.type & PAGE_TYPE_LEAF;
+	}
+
+	getCellByOffset(offset, index) {
+	    console.log('offset', offset, index)
 		let dataSize = this.data.readInt16LE(offset);
 		let data = this.data.slice(
 			offset + CELLDATA_BYTE_SIZE, 
@@ -490,7 +498,7 @@ class IndexPage {
 
 	getCellInfoByIndex(index) {
 		let offset = this.__getOffsetByIndex(index);
-		return this.getCellByOffset(offset);
+		return this.getCellByOffset(offset, index);
 	}
 
 	__findNearestCellInfo(key) {
@@ -523,8 +531,6 @@ class IndexPage {
 				let middleNextCellInfo = this.getCellInfoByIndex(middleNext);
 				if(compare(middleNextCellInfo.key, key) > 0) {
 					return { ... middleNextCellInfo, cellIndex: middle};
-				} else if(compare(middleNextCellInfo.key, key) === 0) {
-					return {... middleNextCellInfo, cellIndex: middleNext};
 				} else {
 					minIndex = middle;
 				}
@@ -652,7 +658,7 @@ class IndexPage {
 		if(this.type & PAGE_TYPE_LEAF) {
 			return new Promise().resolve(this);
 		}
-		
+		console.log('getChildPageKey', key)
 		let cellInfo = this.__findNearestCellInfo(key);	
 		let cachedPage = cache.get(cellInfo.childPageNo);
 		if(cachedPage) {
@@ -689,6 +695,7 @@ class IndexPage {
 
 		// rewrite the cells from begining
 		this.offset = PAGE_SIZE;
+		this.size = 0;
 		for(var i = 0; i < halfSize; i ++) {
 			let cellInfo = tempArray[i];
 			this.insertCell(cellInfo['key'], cellInfo['id'],
@@ -719,7 +726,7 @@ exports.PAGE_TYPE_ID = PAGE_TYPE_ID;
 exports.PAGE_TYPE_INDEX = PAGE_TYPE_INDEX;
 exports.PAGE_TYPE_ROOT = PAGE_TYPE_ROOT;
 exports.PAGE_TYPE_INTERNAL = PAGE_TYPE_INTERNAL;
-exports.PAEG_TYPE_LEAF = PAGE_TYPE_LEAF;
+exports.PAGE_TYPE_LEAF = PAGE_TYPE_LEAF;
 
 const st = function() {
 	let st = fs.statSync(INDEXPATH);

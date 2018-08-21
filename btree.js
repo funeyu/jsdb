@@ -128,7 +128,7 @@ const getDataById = function(id, cb, idPageNo) {
 	});
 }
 
-const rootPage = new IndexPage(null, 0, 
+let rootPage = new IndexPage(null, 0,
 	PAGE_TYPE_INDEX |PAGE_TYPE_ROOT | PAGE_TYPE_LEAF);
 let IndexPageNo = 0;
 
@@ -141,7 +141,7 @@ const insertKey = async(key, id, childPageNo)=> {
 		deepestPage.insertCell(key, id, childPageNo);
 		return ;
 	}
-	reblance(deepestPage, {key, id, childPageNo});
+	rebalance(deepestPage, {key, id, childPageNo});
 
 
 }
@@ -152,13 +152,13 @@ const deleteKey = function(key) {
 
 const walkDeepest = async(key)=> {
 	let startPage = rootPage;
-	while(! startPage.getType() & PAGE_TYPE_LEAF){
+	while(!(startPage.getType() & PAGE_TYPE_LEAF)){
 		startPage = await startPage.getChildPage(key);
 	}
 	return startPage;
 }
 
-const reblance = function(startPage, indexInfo) {
+const rebalance = function(startPage, indexInfo) {
 	if(startPage.hasRoomFor(indexInfo.key)) {
 		startPage.insertCell(
 			indexInfo.key,
@@ -168,11 +168,20 @@ const reblance = function(startPage, indexInfo) {
 	} else {
 		let splices = startPage.half(indexInfo);
 		let middleCellInfo = splices.shift();
-		let splitPage = new IndexPage(rootPage, ++IndexPageNo, 
-			(PAGE_TYPE_INDEX | PAGE_TYPE_INTERNAL));
+		let pageType = PAGE_TYPE_INDEX
+		if(startPage.isLeaf()) {
+			pageType |= PAGE_TYPE_LEAF;
+		} else {
+			pageType |= PAGE_TYPE_INTERNAL;
+		}
+
+		let splitPage = new IndexPage(rootPage, ++IndexPageNo, pageType);
 		middleCellInfo.childPageNo = splitPage.getPageNo();
 
 		if(startPage.isRoot()) {
+			console.log('startPage', startPage)
+			startPage.setType(pageType);
+
 			let rootPageNo = ++IndexPageNo;
 			let rootNewPage = new IndexPage(null, rootPageNo, 
 				(PAGE_TYPE_INDEX | PAGE_TYPE_ROOT));
@@ -182,15 +191,15 @@ const reblance = function(startPage, indexInfo) {
 			});
 
 			rootNewPage.insertCell(MIN_KEY, null, startPage.getPageNo());
-			console.log('middleCellInfo')
 			rootNewPage.insertCell(
 				middleCellInfo.key,
 				middleCellInfo.id,
 				middleCellInfo.childPageNo
 			);
+			rootPage = rootNewPage
 		} else {
 			let parentPage = startPage.getPageParent();
-			reblance(parentPage, middleCellInfo);
+			rebalance(parentPage, middleCellInfo);
 		}
 	}
 }
@@ -201,15 +210,14 @@ for(var i = 0; i < 100; i ++) {
 	keyss.forEach(k=> keys.push(k + i));
 }
 var test = async()=> {
-    for(var i = 1; i < 10; i ++) {
-    	console.log('keys', keys[i])
-        await insertKey(keyss[i], i, i*10);
+    for(var i = 1; i < 59; i ++) {
+		await insertKey(keys[i], i, i*10);
     }
 }
 
 console.log(rootPage)
 test().then(()=> {
-    console.log('window:', rootPage.findId('webstorm'))
+    console.log('window:', rootPage.findId('nodejs2'))
 })
 
 
