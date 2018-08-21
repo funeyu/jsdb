@@ -138,10 +138,10 @@ const insertKey = async(key, id, childPageNo)=> {
 	let hasRoom = deepestPage.hasRoomFor(key);
 	console.log('hasRoom', hasRoom, 'no', deepestPage.getPageNo())
 	if(hasRoom) {
-		deepestPage.insertCell(key, id, childPageNo);
+		deepestPage.insertCell(key, id, 0);
 		return ;
 	}
-	rebalance(deepestPage, {key, id, childPageNo});
+	rebalance(deepestPage, {key, id, childPageNo: 0});
 
 
 }
@@ -175,7 +175,7 @@ const rebalance = function(startPage, indexInfo) {
 			pageType |= PAGE_TYPE_INTERNAL;
 		}
 
-		let splitPage = new IndexPage(rootPage, ++IndexPageNo, pageType);
+		let splitPage = new IndexPage(startPage.getParentPageNo(), ++IndexPageNo, pageType);
 		middleCellInfo.childPageNo = splitPage.getPageNo();
 
 		if(startPage.isRoot()) {
@@ -210,14 +210,18 @@ for(var i = 0; i < 100; i ++) {
 	keyss.forEach(k=> keys.push(k + i));
 }
 var test = async()=> {
-    for(var i = 1; i < 59; i ++) {
-		await insertKey(keys[i], i, i*10);
+    for(var i = 0; i < 56; i ++) {
+    	if(i>=55) {
+    		await insertKey(keys[i], i, i*10 + 1);
+		} else {
+            await insertKey(keys[i], i, i*10 + 1);
+		}
     }
 }
-
-console.log(rootPage)
 test().then(()=> {
-    console.log('window:', rootPage.findId('nodejs2'))
+	rootPage.findId('eclipse3').then((data)=> {
+		console.log('findId', data);
+	})
 })
 
 

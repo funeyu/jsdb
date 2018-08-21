@@ -417,8 +417,12 @@ class IndexPage {
 		return free >= oneCellBytes
 	}	
 
-	getParentPage(pageNo) {
+	setParentPage(pageNo) {
         this.pageParent = pageNo;
+	}
+
+	getParentPageNo() {
+		return this.pageParent
 	}
 
 	setPageNo(pageNo) {
@@ -454,7 +458,7 @@ class IndexPage {
 	}
 
 	getCellByOffset(offset, index) {
-	    console.log('offset', offset, index)
+	    console.log('offset', offset, index);
 		let dataSize = this.data.readInt16LE(offset);
 		let data = this.data.slice(
 			offset + CELLDATA_BYTE_SIZE, 
@@ -516,21 +520,24 @@ class IndexPage {
 		while(minIndex < maxIndex) {
 			let minCellInfo = this.getCellInfoByIndex(minIndex);
 			let maxCellInfo = this.getCellInfoByIndex(maxIndex);
-			// assert(compare(minCellInfo.key, key) <= 0);
-			// assert(compare(maxCellInfo.key, key) >= 0);
 
 			let middle = (minIndex + maxIndex) >> 1;
 			let middleCellInfo = this.getCellInfoByIndex(middle);
+			if(compare(key, maxCellInfo['key']) >= 0) {
+				return {... maxCellInfo, cellIndex: maxIndex}
+			}
+			if(compare(key, minCellInfo['key']) <= 0) {
+				return {... minCellInfo, cellIndex: 0}
+			}
 			if(compare(middleCellInfo.key, key) > 0) {
 				maxIndex = middle;
-				continue;
 			} else if(compare(middleCellInfo.key, key) === 0) {
 				return { ... middleCellInfo, cellIndex: middle};
 			} else {
 				let middleNext = middle + 1;
 				let middleNextCellInfo = this.getCellInfoByIndex(middleNext);
 				if(compare(middleNextCellInfo.key, key) > 0) {
-					return { ... middleNextCellInfo, cellIndex: middle};
+					return { ... middleCellInfo, cellIndex: middle};
 				} else {
 					minIndex = middle;
 				}
@@ -539,6 +546,10 @@ class IndexPage {
 	}
 
 	static LoadPage(pageNo) {
+		let cachedPage = cache.get(pageNo);
+		if(cachedPage) {
+			return Promise.resolve(cachedPage);
+		}
         let page = new IndexPage();
         return new Promise((resolve, reject)=> {
             fs.open(INDEXPATH, 'r', (err, file)=> {
@@ -569,11 +580,18 @@ class IndexPage {
 
 	} 
 
-	findId(key) {
-		let cellInfo = this.__findNearestCellInfo(key);
-		console.log("cellInfo", cellInfo)
-		if(cellInfo && compare(cellInfo.key, key) === 0) {
-			return cellInfo.id;
+	async findId(key) {
+		let cellInfo = this.__findNearestCellInfo(key)
+        if(cellInfo && compare(cellInfo.key, key) === 0) {
+            return cellInfo.id
+        }
+		console.log('cellInfo+++++++++++++++++++++++++++++++', cellInfo);
+		while(cellInfo.childPageNo >= 0) {
+			let childPage = await IndexPage.LoadPage(cellInfo.childPageNo)
+			cellInfo = childPage.__findNearestCellInfo(key);
+            if(cellInfo && compare(cellInfo.key, key) === 0) {
+                return cellInfo.id
+            }
 		}
 	}
 
@@ -656,13 +674,13 @@ class IndexPage {
 
 	getChildPage(key) {
 		if(this.type & PAGE_TYPE_LEAF) {
-			return new Promise().resolve(this);
+			return Promise.resolve(this);
 		}
 		console.log('getChildPageKey', key)
 		let cellInfo = this.__findNearestCellInfo(key);	
 		let cachedPage = cache.get(cellInfo.childPageNo);
 		if(cachedPage) {
-			return new Promise().resolve(cachedPage);
+			return Promise.resolve(cachedPage);
 		} else {
 			return IndexPage.LoadPage(cellInfo.childPageNo);
 		}
@@ -672,24 +690,30 @@ class IndexPage {
 	half(insertCellInfo) {
 		let {key, id, childPageNo} = insertCellInfo;
 		let tempArray = [];
-		let totalSize = this.size + 1;
-		for(var i = 0; i < totalSize; i ++) {
-			let offset = this.__getOffsetByIndex(i);
-			let cellInfo = this.getCellByOffset(offset);
-			if(compare(cellInfo.key, key) < 0) {
-				tempArray.push(cellInfo);
-				if(i === this.size) {
+		for(var i = 0; i < this.size; i ++) {
+			let cellInfo = this.getCellInfoByIndex(i);
+			if(i === 0) {
+				if(compare(cellInfo.key, key) >= 0) {
 					tempArray.push(insertCellInfo);
 				}
-			} else {
-				tempArray.push(insertCellInfo);
-				tempArray.push(cellInfo);
+			}
+            tempArray.push(cellInfo);
+			if(i < this.size -1) {
+				let nextInfo = this.getCellInfoByIndex(i + 1);
+                if(compare(cellInfo.key, key) < 0 && compare(nextInfo.key, key) >= 0) {
+                    tempArray.push(insertCellInfo);
+                }
+			}
+			if(i === this.size - 1) {
+				if(compare(cellInfo.key, key) <= 0) {
+					tempArray.push(insertCellInfo);
+				}
 			}
 		}
 
-		let halfSize = totalSize >> 1;
+		let halfSize = (this.size + 1) >> 1;
 		let splitInfo = [];
-		for(var i = halfSize; i < totalSize; i ++) {
+		for(var i = halfSize; i <= this.size; i ++) {
 			splitInfo.push(tempArray[i]);
 		}
 
