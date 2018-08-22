@@ -18,7 +18,8 @@ const MIN_KEY = '-1';
 const cache = Lru(64 * 1024);
 const ID_CELL_BYTES_SIZE = 8;
 const DATA_PAGE_HEADER_BYTES_SIZE = 8;
-const DATA_CELL_MAX_BYTES = 256;
+const DATA_CELL_MAX_SIZE = 256;
+const DATA_CELL_SIZE_BYTES = 1;
 const OFFSET_BYTES_SIZE = 2;
 
 class DataPage {
@@ -58,22 +59,29 @@ class DataPage {
 	}
 
 	insertCell(id, cellData) {
-		let byteSize = ByteSize(cellData);
-		let needByte = byteSize + ID_CELL_BYTES_SIZE;
-		if(byteSize >= DATA_CELL_MAX_BYTES) {
+		let dataSize = ByteSize(cellData) + DATA_CELL_SIZE_BYTES;
+		let needByte = dataSize + ID_CELL_BYTES_SIZE;
+		if((dataSize - DATA_CELL_SIZE_BYTES) >= DATA_CELL_MAX_SIZE) {
 			throw new Error('cannot insert data size large than 256 b!')
 		}
 		let freeDataSize = this.freeData();
 		if(this.freeData() > needByte) {
-			this.data.write(cellData, this.offset - byteSize);
-			this.offset = this.offset - byteSize;
+			// write the cellData's size
+			this.data.writeInt16LE(dataSize - DATA_CELL_SIZE_BYTES,
+				this.offset - dataSize);
+			// write the cellData
+			this.data.write(cellData, this.offset - dataSize +
+				DATA_CELL_SIZE_BYTES);
+			this.offset = this.offset - dataSize;
 
 			this.data.writeInt32LE(id.timeId,
 				this.size * ID_CELL_BYTES_SIZE + DATA_PAGE_HEADER_BYTES_SIZE);
 			this.data.writeInt16LE(id.count,
-				this.size * ID_CELL_BYTES_SIZE + DATA_PAGE_HEADER_BYTES_SIZE + 4);
+				this.size * ID_CELL_BYTES_SIZE +
+				DATA_PAGE_HEADER_BYTES_SIZE + 4);
 			this.data.writeInt16LE(this.offset,
-				this.size * ID_CELL_BYTES_SIZE + DATA_PAGE_HEADER_BYTES_SIZE + RECORD_ID_BYTES_SIZE);
+				this.size * ID_CELL_BYTES_SIZE +
+				DATA_PAGE_HEADER_BYTES_SIZE + 6);
 			this.size ++;
 			// write size
 			this.data.writeInt16LE(this.size, PAGENO_BYTES);
@@ -89,13 +97,14 @@ class DataPage {
 		let start = DATA_PAGE_HEADER_BYTES_SIZE + index * ID_CELL_BYTES_SIZE;
 		let timeId = this.data.readInt32LE(start);
 		let count = this.data.readInt16LE(start + 4);
-		return {timeId, count}
+		let offset = this.data.readInt16LE(start + 4 + 2);
+		return {timeId, count, offset}
 	}
 
 	__getDataByOffset(offset) {
-		let dataSize = this.data.readInt16LE(offset);
+		let dataSize = this.data.readInt8(offset);
 		let copyData = Buffer.from(this.data);
-		let buffer = copyData.slice(offset + 4, offset + 4 + dataSize);
+		let buffer = copyData.slice(offset + 1, offset + 1 + dataSize);
 		return buffer.toString();
 	}
 
@@ -108,15 +117,15 @@ class DataPage {
         if(IdCompare(idInfo, maxIdInfo) > 0 || IdCompare(idInfo, minIdInfo) < 0) {
             console.log('no data matched id:', id);
         } else {
-            let max=size, min = 1;
+            let max= size - 1, min = 0;
             while(max > min) {
             	let minIdInfo = this.__formId(min);
             	let maxIdInfo = this.__formId(max);
             	if(IdCompare(idInfo, minIdInfo) === 0) {
-            		return this.__getDataByOffset(min);
+            		return this.__getDataByOffset(minIdInfo['offset']);
 				}
 				if(IdCompare(idInfo, maxIdInfo) === 0) {
-            		return this.__getDataByOffset(max);
+            		return this.__getDataByOffset(maxIdInfo['offset']);
 				}
 				if((max - min) === 1) {
             		return;
@@ -124,7 +133,7 @@ class DataPage {
             	let middle = (max + min) >> 1;
             	let midIdInfo = this.__formId(middle);
             	if(IdCompare(idInfo, midIdInfo) === 0) {
-            		return this.__getDataByOffset(middle);
+            		return this.__getDataByOffset(middleInfo['offset']);
 				} else if(IdCompare(idInfo, midIdInfo) > 0) {
             		min = middle
 				} else {
@@ -767,13 +776,16 @@ let id3 = IdGen();
 
 page.insertCell(id1, 'stringDataPage1');
 page.insertCell(id2, 'nodejsDataPage1');
-page.insertCell(id3, 'javaDataPage1');
-
+page.insertCell(id3, 'javaDataPage1123');
+console.log(id1)
+console.log(id2)
+console.log(id3)
 page.flush().then(data=> {
     DataPage.load(1, (err, dataPage)=> {
-        dataPage.getCell(id3, (err, cellInfo)=> {
-            console.log('cellInfo', cellInfo);
-        });
+    	console.log('errror', err)
+	    console.log('id3', id3)
+        let cellInfo = dataPage.getCell(id3);
+    	console.log('cellInfo', cellInfo)
     });
 })
 

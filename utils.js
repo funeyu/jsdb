@@ -67,8 +67,10 @@ let count = 0; // less than 256 * 256
 let id = 0;
 const IdGen = function() {
     let timeId = + new Date();
+    timeId = ~~(timeId / 10000);
     if(timeId > id) {
         count = 0;
+        id = timeId
     } else {
         count ++
     }
