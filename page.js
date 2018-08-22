@@ -2,9 +2,10 @@ const fs = require('fs');
 const assert = require('assert');
 
 const Lru = require('lru-cache');
-const {compare} = require('./utils.js')
+const {compare, ByteSize, IdGen, IdCompare} = require('./utils.js')
 
 const PAGE_SIZE = 1024;
+const RECORD_ID_BYTES_SIZE = 6;
 const FILEPATH = 'js.db';
 const INDEXPATH = 'js.index';
 const PAGE_TYPE_ID = 1;
@@ -14,30 +15,34 @@ const PAGE_TYPE_ROOT = 1 << 3;
 const PAGE_TYPE_INDEX = 1 << 4;
 const MIN_KEY = '-1';
 
-
-const ByteSize = function(str) {
-	str = str.toString();
-	let len = str.length;
-
-	for (let i = str.length; i--; ) {
-    	const code = str.charCodeAt(i);
-    	if (0xdc00 <= code && code <= 0xdfff) {
-      	i--;
-    }
-
-    if (0x7f < code && code <= 0x7ff) {
-      len++;
-    } else if (0x7ff < code && code <= 0xffff) {
-      len += 2;
-    }
-  }
-
-  return len;
-}
-
 const cache = Lru(64 * 1024);
+const ID_CELL_BYTES_SIZE = 8;
+const DATA_PAGE_HEADER_BYTES_SIZE = 8;
+const DATA_CELL_MAX_BYTES = 256;
+const OFFSET_BYTES_SIZE = 2;
 
 class DataPage {
+	/*
+	* B-tree:
+	*  the data format is :
+	*  -------------------------------------------------------------
+	*   pageNo | size | offset | [idCell1...] | [dataCell1 ...]
+	*  -------------------------------------------------------------
+	*  idCell format is:
+	*	idBuffer + dataOffset
+	*
+	*  dataCell format is :
+	*	cellByteSize + rawData
+	*
+	*  the size of the field above:
+	*  pageNo: 4b
+	*  size:   2b
+	*  offset: 2b
+	*  idBuffer:     6b
+	*  dataOffset: 	 2b
+	*  cellByteSize: 1b
+	*  rawData: nb (n <= 256)
+	* */
 	constructor(pageNo) {
 		this.pageNo = pageNo;      	// start from zero
 		this.data = Buffer.alloc(PAGE_SIZE);
@@ -48,81 +53,103 @@ class DataPage {
 	}
 	
 	freeData() {
-		return this.offset - 4 - this.size*8
+		return (this.offset - DATA_PAGE_HEADER_BYTES_SIZE
+			-this.size * ID_CELL_BYTES_SIZE);
 	}
 
 	insertCell(id, cellData) {
-		let byteSize = ByteSize(cellData)
-		if((this.freeData() - byteSize - 8) > 0) {
+		let byteSize = ByteSize(cellData);
+		let needByte = byteSize + ID_CELL_BYTES_SIZE;
+		if(byteSize >= DATA_CELL_MAX_BYTES) {
+			throw new Error('cannot insert data size large than 256 b!')
+		}
+		let freeDataSize = this.freeData();
+		if(this.freeData() > needByte) {
 			this.data.write(cellData, this.offset - byteSize);
-			this.offset = this.offset - byteSize
+			this.offset = this.offset - byteSize;
 
-			this.data.writeInt32LE(id, this.size*8 + 4);
-			this.data.writeInt32LE(this.offset, this.size*8 + 4 +4);
+			this.data.writeInt32LE(id.timeId,
+				this.size * ID_CELL_BYTES_SIZE + DATA_PAGE_HEADER_BYTES_SIZE);
+			this.data.writeInt16LE(id.count,
+				this.size * ID_CELL_BYTES_SIZE + DATA_PAGE_HEADER_BYTES_SIZE + 4);
+			this.data.writeInt16LE(this.offset,
+				this.size * ID_CELL_BYTES_SIZE + DATA_PAGE_HEADER_BYTES_SIZE + RECORD_ID_BYTES_SIZE);
 			this.size ++;
-			this.data.writeInt32LE(this.size, 0);
-
+			// write size
+			this.data.writeInt16LE(this.size, PAGENO_BYTES);
+			// write offset
+			this.data.writeInt16LE(this.offset, PAGENO_BYTES + OFFSET_BYTES_SIZE);
 			return true;
 		} else {		// has no room for cellData
 			return false;
 		}
 	}
 
-	getCell(id) {
-		fs.open('js.db', 'r', (err, file)=> {
-			fs.read(file, this.data, 0, PAGE_SIZE, this.pageNo * PAGE_SIZE,
-                (err, data)=> {
-				let size = this.data.readInt32LE();
+	__formId(index) {
+		let start = DATA_PAGE_HEADER_BYTES_SIZE + index * ID_CELL_BYTES_SIZE;
+		let timeId = this.data.readInt32LE(start);
+		let count = this.data.readInt16LE(start + 4);
+		return {timeId, count}
+	}
 
-				let maxId = this.data.readInt32LE(size*8 - 4);
-				let minId = this.data.readInt32LE(4);
-				if(id > maxId || id < minId) {
-					console.log('no data matched id:', id);
-				} else {
-					let max=size, min = 1;
-					let middle = Math.ceil((max + min) / 2);
-					let midId = this.data.readInt32LE(middle*8 -4);
-					while(midId !== id) {
-						console.log('midId', midId)
-						if((max - min) === 1) {
-							midId = null;
-							break;
-						}
-						if(midId > id) {
-							max = middle
-						} else {
-							min = middle
-						}
-						middle = Math.ceil((max + min) / 2);
-						midId = this.data.readInt32LE(middle*8 -4);
-					}
+	__getDataByOffset(offset) {
+		let dataSize = this.data.readInt16LE(offset);
+		let copyData = Buffer.from(this.data);
+		let buffer = copyData.slice(offset + 4, offset + 4 + dataSize);
+		return buffer.toString();
+	}
 
-					if(midId) {
-						let offset = this.data.readInt32LE(middle*8);
-						console.log('offset', offset)
+	getCell(idInfo) {
+        let size = this.data.readInt16LE(PAGENO_BYTES);
 
-						let result = Buffer.alloc(13);
-						this.data.copy(result, 0, offset, offset + 13)
-						console.log('result', result.toString())
-					} else {
-						console.log('no matched result')
-					}
+        let maxIdInfo = this.__formId(this.size - 1);
+        let minIdInfo = this.__formId(0);
+
+        if(IdCompare(idInfo, maxIdInfo) > 0 || IdCompare(idInfo, minIdInfo) < 0) {
+            console.log('no data matched id:', id);
+        } else {
+            let max=size, min = 1;
+            while(max > min) {
+            	let minIdInfo = this.__formId(min);
+            	let maxIdInfo = this.__formId(max);
+            	if(IdCompare(idInfo, minIdInfo) === 0) {
+            		return this.__getDataByOffset(min);
 				}
-			})
-		})
+				if(IdCompare(idInfo, maxIdInfo) === 0) {
+            		return this.__getDataByOffset(max);
+				}
+				if((max - min) === 1) {
+            		return;
+				}
+            	let middle = (max + min) >> 1;
+            	let midIdInfo = this.__formId(middle);
+            	if(IdCompare(idInfo, midIdInfo) === 0) {
+            		return this.__getDataByOffset(middle);
+				} else if(IdCompare(idInfo, midIdInfo) > 0) {
+            		min = middle
+				} else {
+					max = middle
+                }
+			}
+        }
 	}
 
 	flush() {
-		fs.open('js.db', 'w', (err, file)=> {
-			console.log(err)
-			fs.writeSync(file, this.data, 0, PAGE_SIZE, this.pageNo * PAGE_SIZE);
-		});
+		return new Promise((resolve, reject)=> {
+            fs.open('js.db', 'w', (err, file)=> {
+                if(err) {
+                	return reject(err)
+				}
+                fs.writeSync(file, this.data, 0, PAGE_SIZE, this.pageNo * PAGE_SIZE);
+                resolve()
+            });
+		})
 	}
 
 	static load(pageNo, cb) {
 		let page = cache.get(pageNo + '_Data');
 		if(page) {
-			cb(page);
+			return cb(null, page);
 		}
 
 		page = new DataPage(pageNo);
@@ -394,6 +421,9 @@ class IndexPage {
 		this.data.writeInt16LE(this.size, 5);  
 	}
 
+	static LoadKeyDictionary() {
+
+	}
 	oneCellBytes(key) {
 	    return ByteSize(key) + PAGENO_BYTES + CELLDATA_BYTE_SIZE + ID_BYTES;
     }
@@ -676,7 +706,6 @@ class IndexPage {
 		if(this.type & PAGE_TYPE_LEAF) {
 			return Promise.resolve(this);
 		}
-		console.log('getChildPageKey', key)
 		let cellInfo = this.__findNearestCellInfo(key);	
 		let cachedPage = cache.get(cellInfo.childPageNo);
 		if(cachedPage) {
@@ -730,14 +759,24 @@ class IndexPage {
 	}
 }
 
-// let page = new DataPage(1);
-// page.insertCell(1, 'stringDataPage1');
-// page.insertCell(2, 'nodejsDataPage1');
-// page.insertCell(3, 'javaDataPage1');
-// page.flush()
-// let page1 = DataPage.load(1, (err, page)=> {
-// 	page.getCell(3)
-// })
+let page = new DataPage(1);
+
+let id1 = IdGen();
+let id2 = IdGen();
+let id3 = IdGen();
+
+page.insertCell(id1, 'stringDataPage1');
+page.insertCell(id2, 'nodejsDataPage1');
+page.insertCell(id3, 'javaDataPage1');
+
+page.flush().then(data=> {
+    DataPage.load(1, (err, dataPage)=> {
+        dataPage.getCell(id3, (err, cellInfo)=> {
+            console.log('cellInfo', cellInfo);
+        });
+    });
+})
+
 
 // for(var i = 0; i < 10000; i ++) {
 // 	console.log(IdGen())

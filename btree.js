@@ -19,14 +19,26 @@ const IdGen = function() {
 		count ++
 	}
 	id = timeId;
-	return {
-		timeId: timeId,
-		count: count
-	}
+	let idBuffer = Buffer.alloc(6);
+	idBuffer.writeInt32LE(timeId);
+	idBuffer.writeInt16LE(count);
+	return idBuffer;
 }
 
 // return 1 when id1 > id2; 0 when id1 === id2; otherwise -1
-const IdCompare= function(id1, id2) {
+const IdCompare= function(id1Buffer, id2Buffer) {
+	if(!id1Buffer || id1Buffer.length !== 6 ||
+		!id2Buffer || id2Buffer.length !== 6) {
+		throw new Error('IdCompare method arguments ')
+	}
+	let id1 = {
+		timeId: id1Buffer.readInt32LE(0),
+		count: id1Buffer.readInt16LE(4)
+	};
+	let id2 = {
+		timeId: id2Buffer.readInt32LE(0),
+		count: id2Buffer.readInt16LE(4)
+	}
 	if(id1.timeId > id2.timeId) {
 		return 1
 	} else if(id1.timeId === id2.timeId) {
@@ -179,7 +191,6 @@ const rebalance = function(startPage, indexInfo) {
 		middleCellInfo.childPageNo = splitPage.getPageNo();
 
 		if(startPage.isRoot()) {
-			console.log('startPage', startPage)
 			startPage.setType(pageType);
 
 			let rootPageNo = ++IndexPageNo;
@@ -202,6 +213,10 @@ const rebalance = function(startPage, indexInfo) {
 			rebalance(parentPage, middleCellInfo);
 		}
 	}
+}
+
+const insert = function(data, ... key) {
+
 }
 
 var keyss = ['java', 'nodejs', 'eclipse', 'webstorm', 'c', 'go', 'window', 'linux', 'mac', 'blockchain']
