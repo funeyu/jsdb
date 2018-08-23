@@ -84,7 +84,7 @@ const IdGen = function() {
 exports.IdGen = IdGen;
 
 // return 1 when id1 > id2; 0 when id1 === id2; otherwise -1
-const IdCompare= function(id1Info, id2Info) {
+const IdCompare = function(id1Info, id2Info) {
     if(id1Info.timeId > id2Info.timeId) {
         return 1
     } else if(id1Info.timeId === id2Info.timeId) {
