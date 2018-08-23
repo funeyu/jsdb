@@ -134,7 +134,7 @@ class DataPage {
             	let middle = (max + min) >> 1;
             	let midIdInfo = this.__formId(middle);
             	if(IdCompare(idInfo, midIdInfo) === 0) {
-            		return this.__getDataByOffset(middleInfo['offset']);
+            		return this.__getDataByOffset(midIdInfo['offset']);
 				} else if(IdCompare(idInfo, midIdInfo) > 0) {
             		min = middle
 				} else {
@@ -180,11 +180,11 @@ class DataPage {
 	}
 }
 
-const ONE_CELL_BYTES = 10;
+const ONE_ID_CELL_BYTES = 10;
 const PAGENO_BYTES = 4;
 const SIZENO_BYTES_IN_CELL = 2;
 const ID_BYTES = 4;
-const IDPAGE_HEADER_BYTES =
+const ID_HEADER_PAGE_BYTES = 1 + PAGENO_BYTES * 4 + SIZENO_BYTES_IN_CELL;
 class IdPage {
 	/*
 		the format of this kind page is :
@@ -205,6 +205,7 @@ class IdPage {
 		id:          6b
 	*/
 	constructor(type, pageParent, pageNo) {
+        this.data = Buffer.alloc(PAGE_SIZE);
 		this.type = type;
 		if(typeof pageParent === 'number') {
 			this.pageParent = pageParent;
@@ -217,9 +218,8 @@ class IdPage {
 				+ SIZENO_BYTES_IN_CELL);
 			cache.set(pageNo, this);
 		}
-		this.data = Buffer.alloc(PAGE_SIZE);
+
 		this.data.writeInt8(type, 0);
-		this.offset = PAGE_SIZE;
 		this.size = 0;
 		this.data.writeInt16LE(this.size,  PAGE_TYPE_SIZE + PAGENO_BYTES);
 	}
@@ -237,9 +237,9 @@ class IdPage {
 	}
 
 	__getCellInfoByIndex(cellsBuffer, index) {
-		let childPageNo = cellsBuffer.readInt32LE(index * ONE_CELL_BYTES);
-		let timeId = cellsBuffer.readInt32LE(index * ONE_CELL_BYTES + 4);
-		let count = cellsBuffer.readInt16LE(index * ONE_CELL_BYTES + 8);
+        let timeId = cellsBuffer.readInt32LE(index * ONE_ID_CELL_BYTES);
+        let count = cellsBuffer.readInt16LE(index * ONE_ID_CELL_BYTES + 4);
+		let childPageNo = cellsBuffer.readInt32LE(index * ONE_ID_CELL_BYTES + 4 + 2);
 
 		return {
 			id: {timeId, count},
@@ -248,7 +248,7 @@ class IdPage {
 	}
 
 	getChildPageNo(id) {
-		let cellByteSize = this.size * ONE_CELL_BYTES;
+		let cellByteSize = this.size * ONE_ID_CELL_BYTES;
 		// sizeOf(size) +
 		// sizeOf(paegParent, pageNo, prePage, nextPage) + sizeOf(size)
 		let cellByteBegin = PAGE_TYPE_SIZE +
@@ -267,6 +267,12 @@ class IdPage {
 		}
 
 		while(maxIndex > minIndex) {
+			if(IdCompare(minCellInfo.id, id) === 0) {
+				return minCellInfo.childPageNo;
+			}
+			if(IdCompare(maxCellInfo.id, id) === 0) {
+				return maxCellInfo.childPageNo;
+			}
 			let middle = (minIndex + maxIndex) >> 1;
 			let middleCellInfo = this.__getCellInfoByIndex(cellsBuffer, middle);
 			if(IdCompare(middleCellInfo.id, id) === 0) {
@@ -316,8 +322,7 @@ class IdPage {
 
 	// get the size of free room
 	freeData() {
-		// this.offset - sizeof(pageParent) - sizeof(size) - sizeof(pageNo)
-		return this.offset - 4 - 2 - 4;
+		return (PAGE_SIZE - ID_HEADER_PAGE_BYTES - this.size * ONE_ID_CELL_BYTES);
 	}
 
 	static getRootPage() {
@@ -349,11 +354,12 @@ class IdPage {
 
 	insertCell(id, childPageNo) {
 
-		if (this.freeData() >= 8) {
-			this.data.writeInt32LE(id, this.offset - 8);
-			this.data.writeInt32LE(childPageNo, this.offset - 4);
-			this.offset = this.offset - 8;
-
+		if (this.freeData() >= ONE_ID_CELL_BYTES) {
+			let start = this.size * ONE_ID_CELL_BYTES + ID_HEADER_PAGE_BYTES;
+			this.data.writeInt32LE(id.timeId, start);
+			this.data.writeInt16LE(id.count, start + 4);
+			this.data.writeInt32LE(childPageNo, start + 4 + 2);
+			this.size++;
 			return true;
 		} else {
 			return false;
@@ -415,8 +421,19 @@ class IdPage {
 			fs.writeSync(file, this.data, 0, PAGE_SIZE, this.pageNo * PAGE_SIZE);
 		})
 	}
-}
+};
 
+const idPage = new IdPage(PAGE_TYPE_ID | PAGE_TYPE_ROOT | PAGE_TYPE_LEAF,
+		-1, 0);
+let idPage1 = IdGen();
+let idPage2 = IdGen();
+let idPage3 = IdGen();
+
+idPage.insertCell(idPage1, 0);
+idPage.insertCell(idPage2, 0);
+idPage.insertCell(idPage3, 4);
+console.log('childPageNo:', idPage.getChildPageNo(idPage3));
+console.log('++++++++++++++++++++++++++++++++++++++++++++++++')
 const INDEXPAGE_HEADER_SIZE = 1 + 4 + 2 + 4 + 2;
 const CELLDATA_BYTE_SIZE = 2;
 class IndexPage {
