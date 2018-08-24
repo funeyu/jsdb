@@ -199,8 +199,8 @@ class IdPage {
 		pageParent:  4b
 		size      :  2b
 		pageNo    :  4b
-		prePageNo:     4b
-		nextPageNo:    4b
+		prePageNo:   4b
+		nextPageNo:  4b
 		childPageNo: 4b
 		id:          6b
 	*/
@@ -224,22 +224,79 @@ class IdPage {
 		this.data.writeInt16LE(this.size,  PAGE_TYPE_SIZE + PAGENO_BYTES);
 	}
 
-	setPrePage(prePageNo) {
+    // needStore 标识是否要回写this.data
+	setType(type, needStore) {
+		this.type = type;
+		needStore && this.data.writeInt8(type, 0);
+		return this;
+	}
+
+	setPageParent(pageNo, needStore) {
+		this.pageParent = pageNo;
+		let start = PAGE_TYPE_SIZE;
+		needStore && this.data.writeInt32LE(pageNo, start);
+		return this;
+	}
+
+	setSize(size, needStore) {
+		this.size = size;
+		let start = PAGE_TYPE_SIZE + PAGENO_BYTES;
+		needStore && this.data.writeInt16LE(size, start);
+		return this;
+	}
+
+    setPageNo(pageNo, needStore) {
+        this.pageNo = pageNo;
+        let start = PAGE_TYPE_SIZE + PAGENO_BYTES + SIZENO_BYTES_IN_CELL;
+        needStore && this.data.writeInt32LE(pageNo, start);
+        return this;
+    }
+
+	setPrePage(prePageNo, needStore) {
 		this.prePageNo = prePageNo;
 		let start = PAEG_TYPE_SIZE + PAGENO_BYTES * 2 + SIZENO_BYTES_IN_CELL;
-		this.data.writeInt32LE(prePageNo, start);
+		needStore && this.data.writeInt32LE(prePageNo, start);
+		return this;
 	}
 
-	setNextPage(nextPageNo) {
+	setNextPage(nextPageNo, needStore) {
 		this.nextPageNo = nextPageNo;
 		let start = PAGE_TYPE_SIZE + PAGENO_BYTES * 3 + SIZENO_BYTES_IN_CELL;
-		this.data.writeInt32LE(nextPageNo, start);
+		needStore && this.data.writeInt32LE(nextPageNo, start);
+		return this;
 	}
 
-	__getCellInfoByIndex(cellsBuffer, index) {
-        let timeId = cellsBuffer.readInt32LE(index * ONE_ID_CELL_BYTES);
-        let count = cellsBuffer.readInt16LE(index * ONE_ID_CELL_BYTES + 4);
-		let childPageNo = cellsBuffer.readInt32LE(index * ONE_ID_CELL_BYTES + 4 + 2);
+    getPageNo() {
+        return this.pageNo;
+    }
+
+    getPageParent() {
+        return this.pageParent;
+    }
+    getSize() {
+        return this.size;
+    }
+    isLeaf() {
+        return this.type | PAGE_TYPE_LEAF;
+    }
+
+    isRoot() {
+        return this.type | PAGE_TYPE_ROOT;
+    }
+
+	__getCellInfoByIndex(index) {
+        let cellByteSize = this.size * ONE_ID_CELL_BYTES;
+        // sizeOf(size) +
+        // sizeOf(paegParent, pageNo, prePage, nextPage) + sizeOf(size)
+        let cellByteBegin = PAGE_TYPE_SIZE +
+            PAGENO_BYTES * 4 + SIZENO_BYTES_IN_CELL;
+
+        let timeId = this.data.readInt32LE(cellByteBegin +
+	            index * ONE_ID_CELL_BYTES);
+        let count = this.data.readInt16LE(cellByteBegin +
+	            index * ONE_ID_CELL_BYTES + 4);
+		let childPageNo = this.data.readInt32LE(cellByteBegin +
+				index * ONE_ID_CELL_BYTES + 4 + 2);
 
 		return {
 			id: {timeId, count},
@@ -248,22 +305,20 @@ class IdPage {
 	}
 
 	getChildPageNo(id) {
-		let cellByteSize = this.size * ONE_ID_CELL_BYTES;
-		// sizeOf(size) +
-		// sizeOf(paegParent, pageNo, prePage, nextPage) + sizeOf(size)
-		let cellByteBegin = PAGE_TYPE_SIZE +
-				PAGENO_BYTES * 4 + SIZENO_BYTES_IN_CELL;
-		let copyData = Buffer.from(this.data);
-		let cellsBuffer = copyData.slice(cellByteBegin,
-                cellByteBegin + cellByteSize);
 
 		let minIndex = 0, maxIndex = this.size - 1;
-		let minCellInfo = this.__getCellInfoByIndex(cellsBuffer, minIndex),
-			maxCellInfo = this.__getCellInfoByIndex(cellsBuffer, maxIndex);
+		let minCellInfo = this.__getCellInfoByIndex(minIndex),
+			maxCellInfo = this.__getCellInfoByIndex(maxIndex);
 
-		if(IdCompare(minCellInfo.id, id) > 0
-			|| IdCompare(maxCellInfo.id, id) < 0) {
-			return
+		if(IdCompare(minCellInfo.id, id) > 0) {
+			return ;
+		}
+		// rootPage只有一个cell, 满足该rootPage's id小于id,直接返回
+		if(this.size === 1) {
+			return minCellInfo.childPageNo;
+		}
+		if(this.isLeaf() && IdCompare(maxCellInfo.id, id) < 0) {
+			return ;
 		}
 
 		while(maxIndex > minIndex) {
@@ -273,51 +328,33 @@ class IdPage {
 			if(IdCompare(maxCellInfo.id, id) === 0) {
 				return maxCellInfo.childPageNo;
 			}
-			let middle = (minIndex + maxIndex) >> 1;
-			let middleCellInfo = this.__getCellInfoByIndex(cellsBuffer, middle);
-			if(IdCompare(middleCellInfo.id, id) === 0) {
-				return middleCellInfo.childPageNo;
-			} else if(IdCompare(middleCellInfo.id, id) > 0) {
-				maxIndex = middle;
-			} else if(IdCompare(middleCellInfo.id, id) < 0) {
-				minIndex = middle;
+			if((maxIndex - minIndex) === 1) {
+				return ;
 			}
+			let middle = (minIndex + maxIndex) >> 1;
+			let middleCellInfo = this.__getCellInfoByIndex(middle);
+			if(this.isLeaf()) { // 精确查找 dataPageNo
+                if(IdCompare(middleCellInfo.id, id) === 0) {
+                    return middleCellInfo.childPageNo;
+                } else if(IdCompare(middleCellInfo.id, id) > 0) {
+                    maxIndex = middle;
+                } else if(IdCompare(middleCellInfo.id, id) < 0) {
+                    minIndex = middle;
+                }
+			} else { //查找含有此id的ChildPageNo
+				let middleNextCellInfo = this.__getCellInfoByIndex(middle + 1);
+				if(IdCompare(middleCellInfo.id, id) <= 0
+					&& IdCompare(middleNextCellInfo.id, id) > 0) {
+					return middleCellInfo.childPageNo;
+				}
+				if(IdCompare(middleCellInfo.id, id) > 0) {
+					maxIndex = middle;
+				} else {
+					minIndex = middle;
+				}
+			}
+
 		}
-	}
-
-	getPageNo() {
-		return this.pageNo;
-	}
-
-	getPageParent() {
-		return this.pageParent;
-	}
-	getSize() {
-		return this.size;
-	}
-	isLeaf() {
-		return this.type | PAGE_TYPE_LEAF;
-	}
-
-	isRoot() {
-		return this.type | PAGE_TYPE_ROOT;
-	}
-
-	setPageNo(pageNo) {
-		this.pageNo = pageNo;
-		return this;
-	}
-	setPageParent(pageParent) {
-		this.pageParent = pageParent;
-		return this;
-	}
-	setSize(size) {
-		this.size = size;
-		return this;
-	}
-	setRoot(isRoot) {
-		this.isRoot = isRoot;
-		return this;
 	}
 
 	// get the size of free room
@@ -367,20 +404,47 @@ class IdPage {
 
 	}
 
-	static load(pageNo, cb) {
-		let page = new IdPage();
-		fs.open(INDEXPATH, 'r', (err, file)=> {
-			fs.read(file, page.data, 0, PAGE_SIZE, pageNo * PAGE_SIZE,
-                (err, data)=> {
-				let pageParent = page.data.readInt32LE(0);
-				let size = page.data.readInt16LE(4);
-				let pageNo = page.data.readInt32LE(6);
-				page.setPageParent(pageParent)
-					.setSize(size)
-					.setPageNo(pageNo);
+	getMinIdInfo() {
+		return this.__getCellInfoByIndex(0);
+	}
 
-				cb(err, page);
-			})
+	getMaxIdInfo() {
+		return this.__getCellInfoByIndex(this.size - 1);
+	}
+	__initPage() {
+		let dataBuffer = this.data;
+		let type = dataBuffer.readInt8(0);
+		let pageParent = dataBuffer.readInt32LE(PAGE_TYPE_SIZE);
+		let size = dataBuffer.readInt16LE(PAGE_TYPE_SIZE + PAGENO_BYTES);
+		let pageNo = dataBuffer.readInt32LE(PAGE_TYPE_SIZE + PAGENO_BYTES
+				+ ONE_ID_CELL_BYTES);
+		let prePageNo = dataBuffer.readInt32LE(PAGE_TYPE_SIZE
+				+ PAGENO_BYTES * 2 + ONE_ID_CELL_BYTES);
+		let nextPageNo = dataBuffer.readInt32LE(PAGE_TYPE_SIZE
+				+ PAGENO_BYTES * 3 + ONE_ID_CELL_BYTES);
+
+		this.setType(type)
+			.setPageParent(pageParent)
+			.setSize(size)
+			.setPageNo(pageNo)
+			.setPrePage(prePageNo)
+			.setNextPage(nextPageNo);
+
+	}
+	static Load(pageNo) {
+		return new Promise((resolve, reject)=> {
+            let cachedPage = cache.get(pageNo);
+            if(cachedPage) {
+            	return resolve(cachedPage)
+            }
+            let page = new IdPage();
+            fs.open(INDEXPATH, 'r', (err, file)=> {
+                fs.read(file, page.data, 0, PAGE_SIZE, pageNo * PAGE_SIZE,
+                    (err, data)=> {
+	                    page.__initPage();
+                        resolve(page);
+                    })
+            })
 		})
 	}
 
@@ -840,11 +904,6 @@ page.flush().then(data=> {
     });
 })
 
-
-// for(var i = 0; i < 10000; i ++) {
-// 	console.log(IdGen())
-// }
-
 exports.DataPage = DataPage;
 exports.IdPage = IdPage;
 exports.IndexPage = IndexPage;
@@ -853,9 +912,3 @@ exports.PAGE_TYPE_INDEX = PAGE_TYPE_INDEX;
 exports.PAGE_TYPE_ROOT = PAGE_TYPE_ROOT;
 exports.PAGE_TYPE_INTERNAL = PAGE_TYPE_INTERNAL;
 exports.PAGE_TYPE_LEAF = PAGE_TYPE_LEAF;
-
-const st = function() {
-	let st = fs.statSync(INDEXPATH);
-	console.log('st.size:', st.size)
-}
-st();

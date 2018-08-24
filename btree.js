@@ -5,56 +5,7 @@ const {DataPage, IdPage, IndexPage,
 	PAGE_TYPE_INTERNAL,
 	PAGE_TYPE_LEAF
 } = require('./page.js');
-const {compare} = require('./utils.js');
-const MIN_KEY = '-1'
-
-// generate auto incresed id and the length of id : 6
-let count = 0; // less than 256 * 256
-let id = 0;
-const IdGen = function() {
-	let timeId = + new Date();
-	if(timeId > id) {
-		count = 0;
-	} else {
-		count ++
-	}
-	id = timeId;
-	let idBuffer = Buffer.alloc(6);
-	idBuffer.writeInt32LE(timeId);
-	idBuffer.writeInt16LE(count);
-	return idBuffer;
-}
-
-// return 1 when id1 > id2; 0 when id1 === id2; otherwise -1
-const IdCompare= function(id1Buffer, id2Buffer) {
-	if(!id1Buffer || id1Buffer.length !== 6 ||
-		!id2Buffer || id2Buffer.length !== 6) {
-		throw new Error('IdCompare method arguments ')
-	}
-	let id1 = {
-		timeId: id1Buffer.readInt32LE(0),
-		count: id1Buffer.readInt16LE(4)
-	};
-	let id2 = {
-		timeId: id2Buffer.readInt32LE(0),
-		count: id2Buffer.readInt16LE(4)
-	}
-	if(id1.timeId > id2.timeId) {
-		return 1
-	} else if(id1.timeId === id2.timeId) {
-		if(id1.count > id2.count) {
-			return 1;
-		} else if(id1.count === id2.count) {
-			return 0;
-		} else if(id1.count < id2.count) {
-			return -1;
-		}
-	} else {
-		return -1;
-	}
-}
-
-console.log(compare('key21', 'key2'));
+const {compare, IdGen, IdCompare} = require('./utils.js');
 
 let currentDataPageNo = DataPage.getPageSize();
 let currentIdPageNo = IdPage.getPageSize();
@@ -239,4 +190,37 @@ test().then(()=> {
 	})
 })
 
+
+class IdBtree {
+	constructor(rootPageNo, workingPageNo) {
+        this.rootPageNo = rootPageNo;
+        this.workingPageNo = workingPageNo;
+        return Promise.all([
+        	IdPage.Load(rootPageNo),
+	        IdPage.Load(workingPageNo)
+        ]).then((pages)=> {
+        	this.rootPage = pages[0];
+        	this.workingPage = pages[1];
+        	return this;
+        })
+    }
+
+	async __diveIntoLeaf(idInfo) {
+		let startPage = this.rootPage;
+		while(!startPage.isLeaf()) {
+			let childPageNo = startPage.getChildPageNo(idInfo);
+			if(childPageNo) {
+				startPage = await IdPage.Load(childPageNo);
+			} else {
+				return ;
+			}
+		}
+
+		return startPage;
+	}
+
+	insertId(idInfo, childPageNo) {
+
+	}
+}
 
