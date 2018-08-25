@@ -5,6 +5,7 @@ const Lru = require('lru-cache');
 const {compare, ByteSize, IdGen, IdCompare} = require('./utils.js')
 
 const PAGE_SIZE = 1024;
+exports.PAGE_SIZE = PAGE_SIZE;
 const RECORD_ID_BYTES_SIZE = 6;
 const FILEPATH = 'js.db';
 const INDEXPATH = 'js.index';
@@ -15,6 +16,7 @@ const PAGE_TYPE_ROOT = 1 << 3;
 const PAGE_TYPE_INDEX = 1 << 4;
 const PAGE_TYPE_SIZE = 1;     // the byteSize of the type
 const MIN_KEY = '-1';
+exports.MIN_KEY = MIN_KEY;
 
 const cache = Lru(64 * 1024);
 const ID_CELL_BYTES_SIZE = 8;
@@ -254,7 +256,7 @@ class IdPage {
 
 	setPrePage(prePageNo, needStore) {
 		this.prePageNo = prePageNo;
-		let start = PAEG_TYPE_SIZE + PAGENO_BYTES * 2 + SIZENO_BYTES_IN_CELL;
+		let start = PAGE_TYPE_SIZE + PAGENO_BYTES * 2 + SIZENO_BYTES_IN_CELL;
 		needStore && this.data.writeInt32LE(prePageNo, start);
 		return this;
 	}
@@ -277,11 +279,11 @@ class IdPage {
         return this.size;
     }
     isLeaf() {
-        return this.type | PAGE_TYPE_LEAF;
+        return this.type & PAGE_TYPE_LEAF;
     }
 
     isRoot() {
-        return this.type | PAGE_TYPE_ROOT;
+        return this.type & PAGE_TYPE_ROOT;
     }
 
 	__getCellInfoByIndex(index) {
@@ -325,7 +327,7 @@ class IdPage {
 			if(IdCompare(minCellInfo.id, id) === 0) {
 				return minCellInfo.childPageNo;
 			}
-			if(IdCompare(maxCellInfo.id, id) === 0) {
+			if(IdCompare(maxCellInfo.id, id) <= 0) {
 				return maxCellInfo.childPageNo;
 			}
 			if((maxIndex - minIndex) === 1) {
@@ -410,6 +412,10 @@ class IdPage {
 
 	getMaxIdInfo() {
 		return this.__getCellInfoByIndex(this.size - 1);
+	}
+	// 是否是悬页,即不是跟节点,但却没有parentPage,就为悬页
+	isPendingPage() {
+		return this.pageParent < 0;
 	}
 	__initPage() {
 		let dataBuffer = this.data;
@@ -883,26 +889,26 @@ class IndexPage {
 	}
 }
 
-let page = new DataPage(1);
-
-let id1 = IdGen();
-let id2 = IdGen();
-let id3 = IdGen();
-
-page.insertCell(id1, 'stringDataPage1');
-page.insertCell(id2, 'nodejsDataPage1');
-page.insertCell(id3, 'javaDataPage1123');
-console.log(id1)
-console.log(id2)
-console.log(id3)
-page.flush().then(data=> {
-    DataPage.load(1, (err, dataPage)=> {
-    	console.log('errror', err)
-	    console.log('id3', id3)
-        let cellInfo = dataPage.getCell(id3);
-    	console.log('cellInfo', cellInfo)
-    });
-})
+// let page = new DataPage(1);
+//
+// let id1 = IdGen();
+// let id2 = IdGen();
+// let id3 = IdGen();
+//
+// page.insertCell(id1, 'stringDataPage1');
+// page.insertCell(id2, 'nodejsDataPage1');
+// page.insertCell(id3, 'javaDataPage1123');
+// console.log(id1)
+// console.log(id2)
+// console.log(id3)
+// page.flush().then(data=> {
+//     DataPage.load(1, (err, dataPage)=> {
+//     	console.log('errror', err)
+// 	    console.log('id3', id3)
+//         let cellInfo = dataPage.getCell(id3);
+//     	console.log('cellInfo', cellInfo)
+//     });
+// })
 
 exports.DataPage = DataPage;
 exports.IdPage = IdPage;
