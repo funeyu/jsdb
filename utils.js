@@ -99,4 +99,15 @@ const IdCompare = function(id1Info, id2Info) {
         return -1;
     }
 }
-exports.IdCompare = IdCompare
+exports.IdCompare = IdCompare;
+
+const hash = function(key) {
+    let hash = 5381,
+        i=key.length;
+    while(i){
+        hash = (hash * 33) ^ key.charCodeAt(--i);
+    }
+
+    return hash >>>0;
+}
+exports.hash = hash;

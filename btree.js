@@ -7,7 +7,7 @@ const {DataPage, IdPage, IndexPage,
     PAGE_SIZE,
 	MIN_KEY
 } = require('./page.js');
-const {compare, IdGen, IdCompare} = require('./utils.js');
+const {compare, IdGen, IdCompare, hash, ByteSize} = require('./utils.js');
 
 let currentDataPageNo = DataPage.getPageSize();
 let currentIdPageNo = IdPage.getPageSize();
@@ -193,25 +193,27 @@ const insert = function(data, ... key) {
 // })
 
 const ID_BTREE_META_BYTES = 8;
-const ID_BTREE_META_HEADER = 8 + 4 + 1;
+const ID_BTREE_META_HEADER = 8 + 4 + 1 + 1 + 2 + 1;
 const PAGE_NO_BYTES = 4;
 /*
 * Btree tree的元信息， 占据索引文件的第一个page, 用户索引的key大小不能大于32b
 * 其结构为：
 *  ---------------------------------------------------------------------------
-*             idBtreeMeta | maxPageNo| btreeSize |
+*             idBtreeMeta | maxPageNo| btreeSize | slotSize | offset
 *         [ offset1, offset2, ] ...... [ meta1, meta2, ]
 *  ---------------------------------------------------------------------------
-*  idBreeMeta的数据结构：
-*   rootPageNo(4b)+workingPageNo(4b)
-*  maxPageNo:
-*   标识索引文件最大的页码,新建btree Page的时候都会自增1;
-*  btreeSize：
-*   如果btree有用户的索引,比如有5个定义的索引, 则btreeSize=2^3
+*  idBreeMeta(8b)的数据结构：
+*    rootPageNo(4b)+workingPageNo(4b)
+*  maxPageNo(4b):
+*    标识索引文件最大的页码,新建btree Page的时候都会自增1;
+*  slotSize(1b)：
+*    如果btree有用户的索引,比如有btreeSize = 5, 则slotSize(1b)=2^3;
+*  offset(2b):
+*    标识meta数组的写的偏移,meta从底部开始写,当btreeSize=0时,offset=1024;
 *  Meta 和 IdBtreeMeta都有以上的数据.Meta还有size,nextMetaOffset和keyRaw：
-*   size(1b)+rootPageNo(4b)+workingPageNo(4b)+nextMetaOffset(2b)+keyRaw(nb)
-*  作为指向下一个冲突的key；meta从buffer的底部开始往上添加
-*  [offset...] 和 [meta...]两个形成 BtreeKey的字典
+*    rootPageNo(4b)+nextMetaOffset(1b)+size(1b)+keyRaw(nb)
+*  nextMetaOffset作为指向下一个冲突的key；meta从buffer的底部开始往上添加
+*  [offset...] 和 [meta...]两个形成 BtreeKey的字典;
 * */
 class BtreeMeta {
 	// 直接传递一块page大小buffer，包含所有的BtreeMeta
@@ -227,6 +229,18 @@ class BtreeMeta {
 		this.maxPageNo = pageBuffer.readInt32LE(ID_BTREE_META_BYTES);
 		this.btreeSize = pageBuffer.readInt8(ID_BTREE_META_BYTES
 				+ PAGE_NO_BYTES);
+		let slotSize = pageBuffer.readInt8(ID_BTREE_META_HEADER -3);
+		if(!slotSize) {
+			// 如果slotSize为空, 则置初始值 2^3
+			this.slotSize = 8;
+			this.data.writeInt8(this.slotSize, ID_BTREE_META_HEADER -3);
+		}
+		this.offset = this.data.readInt16LE(ID_BTREE_META_HEADER - 2);
+		if(this.offset === 0) {
+			// 初始状态 offset为最大值
+			this.offset = PAGE_SIZE;
+			this.data.writeInt16LE(PAGE_SIZE, ID_BTREE_META_HEADER -2);
+		}
 	}
 
 	idWorkingOnPageNo() {
@@ -272,6 +286,134 @@ class BtreeMeta {
 	getMaxPageNo() {
 		return this.maxPageNo;
 	}
+
+	//======================================================================
+	// 以下实现一个简易的基于哈希索引的存储, 用来存储用户定义的索引信息
+	// 根据key查找用户设置的btree的rootPageNo, 是hash表查询方式
+	getIndexRootPageNo(key) {
+		let offset = this.__slotOffset(key);
+		if(!offset) {
+			return ;
+		}
+		let metaInfo = this.getIndexMetaInfo(offset);
+		if(compare(key, metaInfo.key) === 0) {
+			return metaInfo.rootPageNo;
+		}
+		while(metaInfo.nextOffset) {
+			metaInfo = this.getIndexMetaInfo(metaInfo.nextOffset);
+			if(compare(key, metaInfo.key) === 0) {
+				return metaInfo.rootPageNo;
+			}
+		}
+	}
+
+
+	getIndexMetaInfo(offset) {
+		let dataCopy = Buffer.from(this.data);
+		let rootPageNo = dataCopy.readInt32LE(offset);
+		let nextOffset = dataCopy.readInt16LE(offset + 4);
+		let size = dataCopy.readInt8(offset + 6);
+		let keyBuffer = dataCopy.slice(offset + 7, offset + 7 + size);
+		return {
+			rootPageNo,
+			nextOffset,
+			size,
+			key: keyBuffer.toString()
+		}
+	}
+
+	__scale() {
+		this.slotSize <<= 1;
+		let beginOffset = PAGE_SIZE;
+		// 先粗暴的将所有的key先收集起来, 再重新添加
+		let keys = [];
+		while(beginOffset > this.offset) {
+			let rootPageNo = this.data.readInt32LE(beginOffset - 4);
+			let keySize = this.data.readInt8(beginOffset - 6);
+			let key = this.data.slice(beginOffset - 7 - keySize,
+					beginOffset-7).toString();
+			keys.push({
+				key,
+				rootPageNo
+			})
+		}
+
+		keys.forEach(k=> {
+			this.addIndexRootPage(k.key, k.rootPageNo);
+		})
+	}
+
+	__rewriteNextOffset(offset, newNextOffset) {
+		this.data.writeInt16LE(newNextOffset, offset + PAGE_NO_BYTES);
+	}
+
+	__free() {
+		return this.offset - this.slotSize * 2 - ID_BTREE_META_HEADER;
+	}
+
+	// 根据key获取offset槽的value, 返回的offset 大于0,则代表该槽已经被占,否则为空
+	__slotOffset(key) {
+		let keyCode = hash(key);
+		let slotIndex = keyCode & (this.slotSize - 1);
+		let offset = this.data.readInt16LE(ID_BTREE_META_HEADER
+				+ slotIndex * 2);
+		return offset;
+	}
+
+	__writeOffsetInSlot(index, offset) {
+		this.data.writeInt16LE(offset, ID_BTREE_META_HEADER + index * 2);
+	}
+
+	// 在冲突链中查找最后一个节点, 返回该metaInfo
+	__findLastMetaInChain(startOffset) {
+		let findedOffset = startOffset;
+		let metaInfo = this.getIndexMetaInfo(startOffset);
+		while(metaInfo.nextOffset) {
+			findedOffset = metaInfo.nextOffset;
+			metaInfo = this.getIndexMetaInfo(metaInfo.nextOffset);
+		}
+		return {offset: findedOffset, ...metaInfo}
+	}
+
+	writeOneIndexMeta(key, rootPageNo, nextOffset) {
+		let keySize = ByteSize(key);
+		// key的长度 + rootPage 的长度 + nextOffset 长度 + size
+		let oneIndexMetaSize = keySize + PAGE_NO_BYTES + 2 + 1;
+		let start = this.offset - oneIndexMetaSize;
+		this.data.writeInt32LE(rootPageNo, start);
+		this.data.writeInt16LE(nextOffset, start + 4);
+		this.data.writeInt8(keySize, start + 6);
+		this.data.write(key, start + 7);
+		this.offset -= (7 + keySize)
+	}
+
+	addIndexRootPage(key, rootPageNo) {
+		let keyBytes = ByteSize(key);
+		// rootPageNo + nextOffset + size + keyRaw
+		let needRoom =  4 + 1 + 1 + keyBytes;
+		if(this.__free() > needRoom) {
+           if(this.btreeSize >= this.slotSize) {
+           	   // 先扩容
+                this.__scale();
+				this.writeOneIndexMeta(key, rootPageNo, 0);
+            } else {
+           	    let keyCode = hash(key);
+           	    let index = keyCode & (this.slotSize - 1);
+                let offset = this.__slotOffset(key);
+				if(offset) { // 产生冲突
+					let metaInfo = this.__findLastMetaInChain(offset);
+                    this.writeOneIndexMeta(key, rootPageNo, 0);
+					this.__rewriteNextOffset(metaInfo.offset, this.offset);
+				} else {
+					this.writeOneIndexMeta(key, rootPageNo, 0);
+                    this.__writeOffsetInSlot(index, this.offset);
+				}
+            }
+		} else {
+			throw new Error('cannot support too many indexes!');
+		}
+	}
+	//=======================================================================
 }
 class IdBtree {
 	constructor(btreeMeta) {
@@ -353,7 +495,7 @@ class IdBtree {
 				return nextPage.getPageNo();
 			} else {
 				maxPageNo ++;
-				let parentPage = await IdPage.Load(page.getPageNo());
+				let parentPage = await IdPage.Load(page.getPageParent());
 				let pageNo = await this.insertRecursily(parentPage, {
 					id: id,
 					childPageNo: maxPageNo
@@ -394,20 +536,34 @@ console.log('// test\n' +
 let btreeMeta = new BtreeMeta(Buffer.alloc(PAGE_SIZE));
 let idBtree = new IdBtree(btreeMeta);
 let id;
+let idArray = [];
 let test = async (btree)=> {
-	for(var i = 0; i < 120; i ++) {
+	for(var i = 0; i < 101; i ++) {
         id = IdGen();
-        if(i === 101) {
-        	await btree.insertId(id, 1);
+        idArray.push(id);
+        if(i === 100) {
+        	await btree.insertId(id, i);
         } else {
-        	await btree.insertId(id, 1);
+        	await btree.insertId(id, i);
         }
 	}
+	console.log('finished')
 }
 idBtree.then(btree=> {
-	test(btree).then(()=> {
-        btree.findPageNo(id).then(data=> {
-            console.log('data', data);
-        })
-	});
+	// test(btree).then(()=> {
+	// 	console.log('19', idArray[1])
+     //    btree.findPageNo(idArray[47]).then(data=> {
+     //        console.log('data', data);
+     //    })
+	// });
+
+	btree.btreeMeta.addIndexRootPage('java', 12345);
+	btree.btreeMeta.addIndexRootPage('javanodejs',234);
+	btree.btreeMeta.addIndexRootPage('odejs', 78);
+	btree.btreeMeta.addIndexRootPage('hello', 89);
+	btree.btreeMeta.addIndexRootPage('javahello', 7);
+	btree.btreeMeta.addIndexRootPage('jeeee', 78);
+	btree.btreeMeta.addIndexRootPage('jjajf;a', 7897);
+
+	console.log('java', btree.btreeMeta.getIndexRootPageNo('jeeee'))
 });

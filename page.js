@@ -331,6 +331,10 @@ class IdPage {
 				return maxCellInfo.childPageNo;
 			}
 			if((maxIndex - minIndex) === 1) {
+				if(IdCompare(minCellInfo.id, id) < 0
+					&& IdCompare(maxCellInfo.id, id) > 0 ) {
+					return minCellInfo.childPageNo
+				}
 				return ;
 			}
 			let middle = (minIndex + maxIndex) >> 1;
