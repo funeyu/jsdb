@@ -310,10 +310,10 @@ class BtreeMeta {
 
 	getIndexMetaInfo(offset) {
 		let dataCopy = Buffer.from(this.data);
-		let rootPageNo = dataCopy.readInt32LE(offset);
-		let nextOffset = dataCopy.readInt16LE(offset + 4);
-		let size = dataCopy.readInt8(offset + 6);
-		let keyBuffer = dataCopy.slice(offset + 7, offset + 7 + size);
+		let rootPageNo = dataCopy.readInt32LE(offset - 4);
+		let nextOffset = dataCopy.readInt16LE(offset - 6);
+		let size = dataCopy.readInt8(offset - 7);
+		let keyBuffer = dataCopy.slice(offset - 7 - size, offset - 7);
 		return {
 			rootPageNo,
 			nextOffset,
@@ -327,24 +327,27 @@ class BtreeMeta {
 		let beginOffset = PAGE_SIZE;
 		// 先粗暴的将所有的key先收集起来, 再重新添加
 		let keys = [];
-		while(beginOffset > this.offset) {
+		while(beginOffset >= this.offset) {
 			let rootPageNo = this.data.readInt32LE(beginOffset - 4);
-			let keySize = this.data.readInt8(beginOffset - 6);
+			let keySize = this.data.readInt8(beginOffset - 7);
 			let key = this.data.slice(beginOffset - 7 - keySize,
-					beginOffset-7).toString();
+					beginOffset - 7).toString();
 			keys.push({
 				key,
 				rootPageNo
 			})
+			beginOffset -= (7 + keySize);
 		}
 
+		this.btreeSize = 0;
+		this.offset = PAGE_SIZE;
 		keys.forEach(k=> {
 			this.addIndexRootPage(k.key, k.rootPageNo);
 		})
 	}
 
 	__rewriteNextOffset(offset, newNextOffset) {
-		this.data.writeInt16LE(newNextOffset, offset + PAGE_NO_BYTES);
+		this.data.writeInt16LE(newNextOffset, offset - PAGE_NO_BYTES - 2);
 	}
 
 	__free() {
@@ -379,11 +382,14 @@ class BtreeMeta {
 		let keySize = ByteSize(key);
 		// key的长度 + rootPage 的长度 + nextOffset 长度 + size
 		let oneIndexMetaSize = keySize + PAGE_NO_BYTES + 2 + 1;
-		let start = this.offset - oneIndexMetaSize;
-		this.data.writeInt32LE(rootPageNo, start);
-		this.data.writeInt16LE(nextOffset, start + 4);
-		this.data.writeInt8(keySize, start + 6);
-		this.data.write(key, start + 7);
+		let start = this.offset;
+		this.data.writeInt32LE(rootPageNo, start - 4);
+		this.data.writeInt16LE(nextOffset, start - 6);
+		this.data.writeInt8(keySize, start - 7);
+		this.data.write(key, start - oneIndexMetaSize);
+		this.btreeSize ++;
+		this.data.writeInt8(this.btreeSize,
+				ID_BTREE_META_BYTES + PAGE_NO_BYTES);
 		this.offset -= (7 + keySize)
 	}
 
@@ -395,6 +401,9 @@ class BtreeMeta {
            if(this.btreeSize >= this.slotSize) {
            	   // 先扩容
                 this.__scale();
+               let keyCode = hash(key);
+               let index = keyCode & (this.slotSize - 1);
+                this.__writeOffsetInSlot(index, this.offset);
 				this.writeOneIndexMeta(key, rootPageNo, 0);
             } else {
            	    let keyCode = hash(key);
@@ -402,11 +411,12 @@ class BtreeMeta {
                 let offset = this.__slotOffset(key);
 				if(offset) { // 产生冲突
 					let metaInfo = this.__findLastMetaInChain(offset);
+                    this.__rewriteNextOffset(metaInfo.offset, this.offset);
                     this.writeOneIndexMeta(key, rootPageNo, 0);
-					this.__rewriteNextOffset(metaInfo.offset, this.offset);
 				} else {
-					this.writeOneIndexMeta(key, rootPageNo, 0);
                     this.__writeOffsetInSlot(index, this.offset);
+					this.writeOneIndexMeta(key, rootPageNo, 0);
+
 				}
             }
 		} else {
@@ -564,6 +574,9 @@ idBtree.then(btree=> {
 	btree.btreeMeta.addIndexRootPage('javahello', 7);
 	btree.btreeMeta.addIndexRootPage('jeeee', 78);
 	btree.btreeMeta.addIndexRootPage('jjajf;a', 7897);
-
-	console.log('java', btree.btreeMeta.getIndexRootPageNo('jeeee'))
+	btree.btreeMeta.addIndexRootPage('ja;ajff',453);
+	btree.btreeMeta.addIndexRootPage('nodjes', 88773);
+	btree.btreeMeta.addIndexRootPage(';asfj;af', 988);
+	btree.btreeMeta.addIndexRootPage('quiet', 7897);
+	console.log('java', btree.btreeMeta.getIndexRootPageNo('nodjes'))
 });
