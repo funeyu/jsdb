@@ -580,3 +580,4 @@ idBtree.then(btree=> {
 	btree.btreeMeta.addIndexRootPage('quiet', 7897);
 	console.log('java', btree.btreeMeta.getIndexRootPageNo('nodjes'))
 });
+

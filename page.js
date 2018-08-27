@@ -119,7 +119,12 @@ class DataPage {
 
         if(IdCompare(idInfo, maxIdInfo) > 0 || IdCompare(idInfo, minIdInfo) < 0) {
             console.log('no data matched id:', id);
-        } else {
+        } else if(IdCompare(idInfo, maxIdInfo) === 0) {
+        	return this.__getDataByOffset(maxIdInfo['offset']);
+        } else if(IdCompare(idInfo, minIdInfo) === 0) {
+        	return this.__getDataByOffset(minIdInfo['offset']);
+        }
+        else {
             let max= size - 1, min = 0;
             while(max > min) {
             	let minIdInfo = this.__formId(min);
