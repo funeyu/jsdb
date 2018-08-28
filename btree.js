@@ -14,11 +14,11 @@ let currentIdPageNo = IdPage.getPageSize();
 let currentLeafIdNo, rootIdPageNo;
 IdPage.getLeafNo().then(leafNo=> {
 	currentLeafIdNo = leafNo;
-})
+});
 
 IdPage.getRootPage().then(rootNo=> {
 	rootIdPageNo = rootNo;
-})
+});
 
 // pageData: {id: xxx, pageNo: xxxx}
 const insertrecursively = function(idPage, pageData) {
@@ -453,6 +453,13 @@ class IdBtree {
 		}
     }
 
+    static LoadFromScratch() {
+		let buffer = Buffer.alloc(PAGE_SIZE);
+		let btreeMeta = new BtreeMeta(buffer);
+
+		return new IdBtree(btreeMeta);
+	}
+
 	async __diveIntoLeaf(idInfo) {
 		let startPage = this.rootPage;
 		while(!startPage.isLeaf()) {
@@ -524,10 +531,12 @@ class IdBtree {
 	}
 
 	async insertId(idInfo, dataPageNo) {
-		return this.insertRecursily(this.workingPage, {
+		await this.insertRecursily(this.workingPage, {
 			id: idInfo,
 			childPageNo: dataPageNo
-		})
+		});
+
+		return
 	}
 
 	// 查找DataPage的pageNo
@@ -580,4 +589,6 @@ idBtree.then(btree=> {
 	btree.btreeMeta.addIndexRootPage('quiet', 7897);
 	console.log('java', btree.btreeMeta.getIndexRootPageNo('nodjes'))
 });
+
+exports.IdBtree = IdBtree;
 

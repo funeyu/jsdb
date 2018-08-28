@@ -111,14 +111,14 @@ class DataPage {
 		return buffer.toString();
 	}
 
-	getCell(idInfo) {
+	getCellData(idInfo) {
         let size = this.data.readInt16LE(PAGENO_BYTES);
 
         let maxIdInfo = this.__formId(this.size - 1);
         let minIdInfo = this.__formId(0);
 
         if(IdCompare(idInfo, maxIdInfo) > 0 || IdCompare(idInfo, minIdInfo) < 0) {
-            console.log('no data matched id:', id);
+            console.log('no data matched id:', idInfo);
         } else if(IdCompare(idInfo, maxIdInfo) === 0) {
         	return this.__getDataByOffset(maxIdInfo['offset']);
         } else if(IdCompare(idInfo, minIdInfo) === 0) {

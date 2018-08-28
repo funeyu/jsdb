@@ -111,3 +111,17 @@ const hash = function(key) {
     return hash >>>0;
 }
 exports.hash = hash;
+
+// 这里先简单的以JS的parse和stringify函数
+const jsonStringify = function(jsonData) {
+    let string = JSON.stringify(jsonData);
+
+    return string;
+}
+exports.jsonStringify = jsonStringify;
+
+const jsonParse = function(jsonString) {
+    let json = JSON.parse(jsonString);
+    return json;
+}
+exports.jsonParse = jsonParse;
