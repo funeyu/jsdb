@@ -1,7 +1,10 @@
 /*
 **	return 1 when key1 > key2; return 0 key1 = key2; otherwise false
 */
-const MIN_KEY = '-1'
+const fs = require('fs');
+const path = require('path');
+
+const MIN_KEY = '-1';
 const compare= function(key1, key2) {
 	if(typeof key1 !== 'string' || typeof key2 !== 'string') {
 		console.log(key1, key2);
@@ -125,3 +128,18 @@ const jsonParse = function(jsonString) {
     return json;
 }
 exports.jsonParse = jsonParse;
+
+const CreateFileIfNotExist = function(filePath) {
+    let pathSep = filePath.split(path.sep);
+    console.log('pathSep', pathSep);
+    let _path = './';
+    for(let i = 0; i < pathSep.length; i ++) {
+        if(pathSep[i]) {
+            _path += (path.sep + pathSep[i]);
+            if(!fs.existsSync(_path)) {
+                fs.mkdirSync(_path);
+            }
+        }
+    }
+}
+exports.CreateFileIfNotExist = CreateFileIfNotExist;

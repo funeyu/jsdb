@@ -9,188 +9,6 @@ const {DataPage, IdPage, IndexPage,
 } = require('./page.js');
 const {compare, IdGen, IdCompare, hash, ByteSize} = require('./utils.js');
 
-let currentDataPageNo = DataPage.getPageSize();
-let currentIdPageNo = IdPage.getPageSize();
-let currentLeafIdNo, rootIdPageNo;
-IdPage.getLeafNo().then(leafNo=> {
-	currentLeafIdNo = leafNo;
-});
-
-IdPage.getRootPage().then(rootNo=> {
-	rootIdPageNo = rootNo;
-});
-
-// pageData: {id: xxx, pageNo: xxxx}
-const insertrecursively = function(idPage, pageData) {
-	let {id, pageNo} = pageData
-
-	let result = idPage.insertCell(id, pageNo);
-	if(result === 'FULL') {
-		if(idPage.isRoot()) {
-			let newIdPage = new IdPage(null, ++currentIdPageNo);
-			newIdPage.setRoot(true);
-			newIdPage.insertCell(id, pageNo);
-
-			IdPage.setRootPage(newIdPage.pageNo);
-		}
-
-		IdPage.load(idPage.getPageParent(), function(parentPage) {
-			let newIdPage = new IdPage(null, ++currentIdPageNo);
-			if(parentPage.isRoot()) {
-				// mark this idPage as root page
-				newIdPage.setRoot(true);
-				newIdPage.insertCell(id, pageNo);
-				IdPage.setRootPage(newIdPage.pageNo);
-			} else {
-				insertrecursively(parentPage, {
-					id: pageData.id, 
-					pageNo: parentPage.pageNo
-				})
-			}
-		});
-	}
-	else if(result === 'LINK') {
-		let newIdPage = new IdPage(idPage.getPageParent(), ++currentIdPageNo);
-		newIdPage.insertCell(pageData.id, pageData.pageNo);
-		
-		newIdPage.setPre(idPage);
-		idPage.setNext(newIdPage);
-	}
-}
-
-const insertData = function(data) {
-	let id = IdGen();
-
-	DataPage.load(currentDataPageNo, function(page) {
-		let result = page.insertCell(id, data);
-		if(result === 'FULL') {
-			page.flush();
-			let pageNo = currentDataPageNo;
-			currentDataPageNo ++;
-
-			let dataPage = new DataPage(currentDataPageNo);
-			// to do: if the data large than DataPage size
-			dataPage.insertCell(id, data);
-
-			IdPage.load(currentLeafIdNo, function(idLeafPage) {
-				insertrecursively(idLeafPage, {id, pageNo});
-			})
-		}
-	})
-}
-
-const getDataById = function(id, cb, idPageNo) {
-	idPageNo = idPageNo || rootIdPageNo;
-	IdPage.load(idPageNo, function(idPage) {
-		let childPageNo = idPage.getChildPageNo(id);
-		if(idPage.isLeaf()) {
-			DataPage.load(childPageNo, function(dataPage) {
-				cb(null, dataPage);
-			});
-		} else {
-			getDataById(id, cb, childPageNo);
-		}
-	});
-}
-
-let rootPage = new IndexPage(null, 0,
-	PAGE_TYPE_INDEX |PAGE_TYPE_ROOT | PAGE_TYPE_LEAF);
-let IndexPageNo = 0;
-
-const insertKey = async(key, id, childPageNo)=> {
-	let deepestPage = await walkDeepest(key);
-
-	let hasRoom = deepestPage.hasRoomFor(key);
-	console.log('hasRoom', hasRoom, 'no', deepestPage.getPageNo())
-	if(hasRoom) {
-		deepestPage.insertCell(key, id, 0);
-		return ;
-	}
-	rebalance(deepestPage, {key, id, childPageNo: 0});
-
-
-}
-
-const deleteKey = function(key) {
-
-}
-
-const walkDeepest = async(key)=> {
-	let startPage = rootPage;
-	while(!(startPage.getType() & PAGE_TYPE_LEAF)){
-		startPage = await startPage.getChildPage(key);
-	}
-	return startPage;
-}
-
-const rebalance = function(startPage, indexInfo) {
-	if(startPage.hasRoomFor(indexInfo.key)) {
-		startPage.insertCell(
-			indexInfo.key,
-			indexInfo.id,
-			indexInfo.childPageNo
-		);
-	} else {
-		let splices = startPage.half(indexInfo);
-		let middleCellInfo = splices.shift();
-		let pageType = PAGE_TYPE_INDEX
-		if(startPage.isLeaf()) {
-			pageType |= PAGE_TYPE_LEAF;
-		} else {
-			pageType |= PAGE_TYPE_INTERNAL;
-		}
-
-		let splitPage = new IndexPage(startPage.getParentPageNo(), ++IndexPageNo, pageType);
-		middleCellInfo.childPageNo = splitPage.getPageNo();
-
-		if(startPage.isRoot()) {
-			startPage.setType(pageType);
-
-			let rootPageNo = ++IndexPageNo;
-			let rootNewPage = new IndexPage(null, rootPageNo, 
-				(PAGE_TYPE_INDEX | PAGE_TYPE_ROOT));
-
-			splices.forEach(s=> {
-				splitPage.insertCell(s.key, s.id, s.childPageNo);
-			});
-
-			rootNewPage.insertCell(MIN_KEY, null, startPage.getPageNo());
-			rootNewPage.insertCell(
-				middleCellInfo.key,
-				middleCellInfo.id,
-				middleCellInfo.childPageNo
-			);
-			rootPage = rootNewPage
-		} else {
-			let parentPage = startPage.getPageParent();
-			rebalance(parentPage, middleCellInfo);
-		}
-	}
-}
-
-const insert = function(data, ... key) {
-
-}
-
-// keyvar keyss = ['java', 'nodejs', 'eclipse', 'webstorm', 'c', 'go', 'window', 'linux', 'mac', 'blockchain']
-// var keys = [];
-// for(var i = 0; i < 100; i ++) {
-// 	keyss.forEach(k=> keys.push(k + i));
-// }
-// var test = async()=> {
-//     for(var i = 0; i < 56; i ++) {
-//     	if(i>=55) {
-//     		await insertKey(keys[i], i, i*10 + 1);
-// 		} else {
-//             await insertKey(keys[i], i, i*10 + 1);
-// 		}
-//     }
-// }
-// test().then(()=> {
-// 	rootPage.findId('eclipse3').then((data)=> {
-// 		console.log('findId', data);
-// 	})
-// })
 
 const ID_BTREE_META_BYTES = 8;
 const ID_BTREE_META_HEADER = 8 + 4 + 1 + 1 + 2 + 1;
@@ -269,7 +87,8 @@ class BtreeMeta {
 
 	increaseMaxPageNo() {
 		this.maxPageNo++;
-		return this.setMaxPageNo(this.maxPageNo);
+		this.setMaxPageNo(this.maxPageNo);
+		return this.maxPageNo;
 	}
 
 	setIdBtreeMeta(idBtreeMeta) {
@@ -291,23 +110,35 @@ class BtreeMeta {
 	// 以下实现一个简易的基于哈希索引的存储, 用来存储用户定义的索引信息
 	// 根据key查找用户设置的btree的rootPageNo, 是hash表查询方式
 	getIndexRootPageNo(key) {
-		let offset = this.__slotOffset(key);
-		if(!offset) {
-			return ;
-		}
-		let metaInfo = this.getIndexMetaInfo(offset);
-		if(compare(key, metaInfo.key) === 0) {
+		let metaInfo = this.__getMetaInfoByKey(key);
+		if(metaInfo) {
 			return metaInfo.rootPageNo;
 		}
-		while(metaInfo.nextOffset) {
-			metaInfo = this.getIndexMetaInfo(metaInfo.nextOffset);
-			if(compare(key, metaInfo.key) === 0) {
-				return metaInfo.rootPageNo;
-			}
-		}
+		return;
 	}
 
-
+	__getMetaInfoByKey(key) {
+        let offset = this.__slotOffset(key);
+        if(!offset) {
+            return ;
+        }
+        let metaInfo = this.getIndexMetaInfo(offset);
+        if(compare(key, metaInfo.key) === 0) {
+            return {
+	            ... metaInfo,
+	            'offset': offset
+            };
+        }
+        while(metaInfo.nextOffset) {
+            metaInfo = this.getIndexMetaInfo(metaInfo.nextOffset);
+            if(compare(key, metaInfo.key) === 0) {
+                return {
+	                ... metaInfo,
+	                'offset': metaInfo.nextOffset
+                };
+            }
+        }
+	}
 	getIndexMetaInfo(offset) {
 		let dataCopy = Buffer.from(this.data);
 		let rootPageNo = dataCopy.readInt32LE(offset - 4);
@@ -335,7 +166,7 @@ class BtreeMeta {
 			keys.push({
 				key,
 				rootPageNo
-			})
+			});
 			beginOffset -= (7 + keySize);
 		}
 
@@ -378,7 +209,7 @@ class BtreeMeta {
 		return {offset: findedOffset, ...metaInfo}
 	}
 
-	writeOneIndexMeta(key, rootPageNo, nextOffset) {
+	__writeOneIndexMeta(key, rootPageNo, nextOffset) {
 		let keySize = ByteSize(key);
 		// key的长度 + rootPage 的长度 + nextOffset 长度 + size
 		let oneIndexMetaSize = keySize + PAGE_NO_BYTES + 2 + 1;
@@ -404,7 +235,7 @@ class BtreeMeta {
                let keyCode = hash(key);
                let index = keyCode & (this.slotSize - 1);
                 this.__writeOffsetInSlot(index, this.offset);
-				this.writeOneIndexMeta(key, rootPageNo, 0);
+				this.__writeOneIndexMeta(key, rootPageNo, 0);
             } else {
            	    let keyCode = hash(key);
            	    let index = keyCode & (this.slotSize - 1);
@@ -412,10 +243,10 @@ class BtreeMeta {
 				if(offset) { // 产生冲突
 					let metaInfo = this.__findLastMetaInChain(offset);
                     this.__rewriteNextOffset(metaInfo.offset, this.offset);
-                    this.writeOneIndexMeta(key, rootPageNo, 0);
+                    this.__writeOneIndexMeta(key, rootPageNo, 0);
 				} else {
                     this.__writeOffsetInSlot(index, this.offset);
-					this.writeOneIndexMeta(key, rootPageNo, 0);
+					this.__writeOneIndexMeta(key, rootPageNo, 0);
 
 				}
             }
@@ -423,22 +254,40 @@ class BtreeMeta {
 			throw new Error('cannot support too many indexes!');
 		}
 	}
+
+	__changeRootPageNo(offset, rootPageNo) {
+		this.data.writeInt32LE(rootPageNo, offset - 4);
+	}
+
+	// 更新btree索引的rootPageNo, btree每当rootPage裂变的时候, 都得更新;
+	updateIndexRootPage(rootPageNo) {
+		let metaInfo = this.__getMetaInfoByKey(key);
+		if(!metaInfo) {
+			throw new Error(`BtreeMeta cannot update key(${key}) not exists!`);
+		}
+		this.__changeRootPageNo(metaInfo.offset, metaInfo.rootPageNo);
+	}
 	//=======================================================================
 }
+
 class IdBtree {
 	constructor(btreeMeta) {
 		this.btreeMeta = btreeMeta;
 		// IdBtree为空，整个表为空
-		if(this.btreeMeta.isEmpty()) {
-			let idPage = new IdPage(PAGE_TYPE_ID|PAGE_TYPE_ROOT|PAGE_TYPE_LEAF,
-					-1, 1);
-			btreeMeta.setMaxPageNo(1)
-					 .setIdBtreeMeta({
-						 rootPageNo: 1,
-						 workingPageNo: 1
-					 });
-			this.workingPage = this.rootPage = idPage;
-			return Promise.resolve(this);
+		if(!this.btreeMeta || this.btreeMeta.isEmpty()) {
+            if(!this.btreeMeta) {
+                let pageBuffer = Buffer.alloc(PAGE_SIZE);
+                this.btreeMeta = new BtreeMeta(pageBuffer);
+            }
+            let idPage = new IdPage(PAGE_TYPE_ID|PAGE_TYPE_ROOT|PAGE_TYPE_LEAF,
+                -1, 1);
+            this.btreeMeta.setMaxPageNo(1)
+                .setIdBtreeMeta({
+                    rootPageNo: 1,
+                    workingPageNo: 1
+                });
+            this.workingPage = this.rootPage = idPage;
+            return Promise.resolve(this);
 		} else {
 			let rootPageNo = btreeMeta.idRootPageNo();
 			let workingPageNo = btreeMeta.idWorkingOnPageNo();
@@ -531,6 +380,10 @@ class IdBtree {
 	}
 
 	async insertId(idInfo, dataPageNo) {
+		if(typeof dataPageNo !== 'number') {
+			throw new Error('the argument dataPageNo in idBtree.insertId' +
+				'must be number!');
+		}
 		await this.insertRecursily(this.workingPage, {
 			id: idInfo,
 			childPageNo: dataPageNo
@@ -550,45 +403,90 @@ class IdBtree {
 	}
 }
 
-console.log('// test\n' +
-    '//====================================================================');
-let btreeMeta = new BtreeMeta(Buffer.alloc(PAGE_SIZE));
-let idBtree = new IdBtree(btreeMeta);
-let id;
-let idArray = [];
-let test = async (btree)=> {
-	for(var i = 0; i < 101; i ++) {
-        id = IdGen();
-        idArray.push(id);
-        if(i === 100) {
-        	await btree.insertId(id, i);
-        } else {
-        	await btree.insertId(id, i);
-        }
-	}
-	console.log('finished')
-}
-idBtree.then(btree=> {
-	// test(btree).then(()=> {
-	// 	console.log('19', idArray[1])
-     //    btree.findPageNo(idArray[47]).then(data=> {
-     //        console.log('data', data);
-     //    })
-	// });
-
-	btree.btreeMeta.addIndexRootPage('java', 12345);
-	btree.btreeMeta.addIndexRootPage('javanodejs',234);
-	btree.btreeMeta.addIndexRootPage('odejs', 78);
-	btree.btreeMeta.addIndexRootPage('hello', 89);
-	btree.btreeMeta.addIndexRootPage('javahello', 7);
-	btree.btreeMeta.addIndexRootPage('jeeee', 78);
-	btree.btreeMeta.addIndexRootPage('jjajf;a', 7897);
-	btree.btreeMeta.addIndexRootPage('ja;ajff',453);
-	btree.btreeMeta.addIndexRootPage('nodjes', 88773);
-	btree.btreeMeta.addIndexRootPage(';asfj;af', 988);
-	btree.btreeMeta.addIndexRootPage('quiet', 7897);
-	console.log('java', btree.btreeMeta.getIndexRootPageNo('nodjes'))
-});
-
 exports.IdBtree = IdBtree;
+
+class IndexBtree {
+    constructor(btreeMeta, key, rootPageNo) {
+        this.btreeMeta = btreeMeta;
+        this.key = key;
+        this.rootPageNo = rootPageNo;
+        let indexPage = new IndexPage(
+            PAGE_TYPE_INDEX|PAGE_TYPE_ROOT|PAGE_TYPE_LEAF, -1, 1);
+        btreeMeta.setMaxPageNo(1)
+            .addIndexRootPage(key, rootPageNo);
+        this.rootPage = indexPage;
+        return Promise.resolve(this);
+    }
+
+    async insertKey(key, id) {
+        let deepestPage = await this.walkDeepest(key);
+
+        let hasRoom = deepestPage.hasRoomFor(key);
+        console.log('hasRoom', hasRoom, 'no', deepestPage.getPageNo());
+        if(hasRoom) {
+            deepestPage.insertCell(key, id, 0);
+            return ;
+        }
+        this.rebalance(deepestPage, {key, id, childPageNo: 0});
+    }
+
+    async walkDeepest(key) {
+        let startPage = this.rootPage;
+        while(!(startPage.getType() & PAGE_TYPE_LEAF)){
+            startPage = await startPage.getChildPage(key);
+        }
+        return startPage;
+    }
+
+    rebalance(startPage, indexInfo) {
+        if(startPage.hasRoomFor(indexInfo.key)) {
+            startPage.insertCell(
+                indexInfo.key,
+                indexInfo.id,
+                indexInfo.childPageNo
+            );
+        } else {
+            let splices = startPage.half(indexInfo);
+            let middleCellInfo = splices.shift();
+            let pageType = PAGE_TYPE_INDEX;
+            if(startPage.isLeaf()) {
+                pageType |= PAGE_TYPE_LEAF;
+            } else {
+                pageType |= PAGE_TYPE_INTERNAL;
+            }
+
+            let maxPageNo = this.btreeMeta.getMaxPageNo();
+            let splitPage = new IndexPage(startPage.getParentPageNo(),
+	                maxPageNo, pageType);
+            middleCellInfo.childPageNo = splitPage.getPageNo();
+
+            if(startPage.isRoot()) {
+                startPage.setType(pageType);
+
+                let rootPageNo = this.btreeMeta.increaseMaxPageNo();
+
+                let rootNewPage = new IndexPage(null, rootPageNo,
+                    (PAGE_TYPE_INDEX | PAGE_TYPE_ROOT));
+
+                splices.forEach(s=> {
+                    splitPage.insertCell(s.key, s.id, s.childPageNo);
+                });
+
+                rootNewPage.insertCell(MIN_KEY, null, startPage.getPageNo());
+                rootNewPage.insertCell(
+                    middleCellInfo.key,
+                    middleCellInfo.id,
+                    middleCellInfo.childPageNo
+                );
+                this.rootPage = rootNewPage;
+                this.btreeMeta.updateIndexRootPage(rootNewPage.getPageNo());
+            } else {
+                let parentPage = startPage.getPageParent();
+                this.rebalance(parentPage, middleCellInfo);
+            }
+        }
+    }
+}
+
+exports.IndexPage = IndexPage;
 

@@ -1,8 +1,11 @@
 const fs = require('fs');
 const assert = require('assert');
+const path = require('path');
+const util = require('util');
 
 const Lru = require('lru-cache');
-const {compare, ByteSize, IdGen, IdCompare} = require('./utils.js')
+const {compare, ByteSize, IdGen, IdCompare,
+	CreateFileIfNotExist} = require('./utils.js');
 
 const PAGE_SIZE = 1024;
 exports.PAGE_SIZE = PAGE_SIZE;
@@ -59,6 +62,10 @@ class DataPage {
 	freeData() {
 		return (this.offset - DATA_PAGE_HEADER_BYTES_SIZE
 			-this.size * ID_CELL_BYTES_SIZE);
+	}
+
+	getPageNo() {
+		return this.pageNo;
 	}
 
 	insertCell(id, cellData) {
@@ -163,27 +170,56 @@ class DataPage {
 		})
 	}
 
-	static load(pageNo, cb) {
+	static async load(directory, pageNo) {
+		let filePath = path.join(directory, FILEPATH);
+		if(!fs.existsSync(filePath)) {
+			throw new Error('DataPage.load(), direcotry:%s not exits',
+					filePath);
+		}
 		let page = cache.get(pageNo + '_Data');
 		if(page) {
-			return cb(null, page);
+			return page;
 		}
 
 		page = new DataPage(pageNo);
-		fs.open('js.db', 'r', (err, file)=> {
-			fs.read(file, page.data, 0, PAGE_SIZE, pageNo * PAGE_SIZE,
-                (err, data)=> {
-				cache.set(pageNo + '_Data', page);
-				
-				cb(err, page);
-				console.log('data size', page.data.readInt32LE());
-			});
-		})
+		let loadFromDisk = new Promise((resolve, reject)=> {
+			fs.open(filePath, 'rw', (err, file)=> {
+				if(err) {
+					return reject(err);
+				}
+				fs.read(file, page.data, 0, PAGE_SIZE, pageNo * PAGE_SIZE,
+					(err, data)=> {
+						if(err) {
+							return reject(err);
+						}
+						cache.set(pageNo + '_Data', page);
+						resolve();
+					});
+				if(err) {
+					reject(err);
+				} else {
+					cache.set(pageNo + '_Data', page);
+					resolve()
+				}
+			})
+		});
+
+		await loadFromDisk;
+		return page;
 	}
 
-	static getPageSize() {
-		const stat = fs.statSync(FILEPATH);
-		return stat.size / PAGE_SIZE;
+	static InitFile(directory) {
+		let filePath = path.join(directory, FILEPATH);
+		CreateFileIfNotExist(filePath);
+	}
+
+	static MaxPageNo(directory) {
+		let filePath = path.join(directory, FILEPATH);
+		if(fs.exists(filePath)) {
+            const stat = fs.statSync(filePath);
+            return stat.size / PAGE_SIZE;
+        }
+        return 0;
 	}
 }
 
@@ -229,6 +265,11 @@ class IdPage {
 		this.data.writeInt8(type, 0);
 		this.size = 0;
 		this.data.writeInt16LE(this.size,  PAGE_TYPE_SIZE + PAGENO_BYTES);
+	}
+
+	static InitFile(directory) {
+		let filePath = path.join(directory, INDEXPATH);
+		CreateFileIfNotExist(filePath);
 	}
 
     // needStore 标识是否要回写this.data
@@ -535,7 +576,7 @@ class IndexPage {
 		id:          4b  // the key pair <key, id>
 		rawKey: 	 nb  // the raw data of key
 	*/
-	constructor(pageParent, pageNo, type) {
+	constructor(type, pageParent, pageNo) {
 		this.data = Buffer.alloc(PAGE_SIZE);
 		if(!pageParent && !pageNo && !type) {
 		    return;
@@ -897,27 +938,6 @@ class IndexPage {
 		return splitInfo;
 	}
 }
-
-// let page = new DataPage(1);
-//
-// let id1 = IdGen();
-// let id2 = IdGen();
-// let id3 = IdGen();
-//
-// page.insertCell(id1, 'stringDataPage1');
-// page.insertCell(id2, 'nodejsDataPage1');
-// page.insertCell(id3, 'javaDataPage1123');
-// console.log(id1)
-// console.log(id2)
-// console.log(id3)
-// page.flush().then(data=> {
-//     DataPage.load(1, (err, dataPage)=> {
-//     	console.log('errror', err)
-// 	    console.log('id3', id3)
-//         let cellInfo = dataPage.getCell(id3);
-//     	console.log('cellInfo', cellInfo)
-//     });
-// })
 
 exports.DataPage = DataPage;
 exports.IdPage = IdPage;
