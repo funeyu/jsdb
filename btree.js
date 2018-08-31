@@ -418,6 +418,11 @@ class IndexBtree {
         return Promise.resolve(this);
     }
 
+    updateRootPageNo(rootPageNo) {
+        this.rootPageNo = rootPageNo;
+        this.btreeMeta.updateIndexRootPage(rootPageNo);
+    }
+
     async insertKey(key, id) {
         let deepestPage = await this.walkDeepest(key);
 
@@ -445,6 +450,7 @@ class IndexBtree {
                 indexInfo.id,
                 indexInfo.childPageNo
             );
+            return startPage.getPageNo();
         } else {
             let splices = startPage.half(indexInfo);
             let middleCellInfo = splices.shift();
@@ -455,16 +461,12 @@ class IndexBtree {
                 pageType |= PAGE_TYPE_INTERNAL;
             }
 
-            let maxPageNo = this.btreeMeta.getMaxPageNo();
-            let splitPage = new IndexPage(startPage.getParentPageNo(),
-	                maxPageNo, pageType);
-            middleCellInfo.childPageNo = splitPage.getPageNo();
-
             if(startPage.isRoot()) {
                 startPage.setType(pageType);
-
-                let rootPageNo = this.btreeMeta.increaseMaxPageNo();
-
+				let splitPageNo = this.btreeMeta.increaseMaxPageNo();
+				let rootPageNo = this.btreeMeta.increaseMaxPageNo();
+				let splitPage = new IndexPage(splitPageNo, rootPageNo,
+						pageType);
                 let rootNewPage = new IndexPage(null, rootPageNo,
                     (PAGE_TYPE_INDEX | PAGE_TYPE_ROOT));
 
@@ -473,6 +475,7 @@ class IndexBtree {
                 });
 
                 rootNewPage.insertCell(MIN_KEY, null, startPage.getPageNo());
+                middleCellInfo.childPageNo = splitPageNo;
                 rootNewPage.insertCell(
                     middleCellInfo.key,
                     middleCellInfo.id,
@@ -480,6 +483,7 @@ class IndexBtree {
                 );
                 this.rootPage = rootNewPage;
                 this.btreeMeta.updateIndexRootPage(rootNewPage.getPageNo());
+                return splitPageNo;
             } else {
                 let parentPage = startPage.getPageParent();
                 this.rebalance(parentPage, middleCellInfo);
