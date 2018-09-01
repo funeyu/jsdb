@@ -4,9 +4,9 @@ const {DataPage, IdPage, IndexPage,
 	PAGE_TYPE_ROOT,
 	PAGE_TYPE_INTERNAL,
 	PAGE_TYPE_LEAF,
-    PAGE_SIZE,
-	MIN_KEY
+    PAGE_SIZE
 } = require('./page.js');
+const {MIN_KEY, MIN_ID} = require('./constants');
 const {compare, IdGen, IdCompare, hash, ByteSize} = require('./utils.js');
 
 
@@ -260,7 +260,7 @@ class BtreeMeta {
 	}
 
 	// 更新btree索引的rootPageNo, btree每当rootPage裂变的时候, 都得更新;
-	updateIndexRootPage(rootPageNo) {
+	updateIndexRootPage(rootPageNo, key) {
 		let metaInfo = this.__getMetaInfoByKey(key);
 		if(!metaInfo) {
 			throw new Error(`BtreeMeta cannot update key(${key}) not exists!`);
@@ -269,6 +269,7 @@ class BtreeMeta {
 	}
 	//=======================================================================
 }
+exports.BtreeMeta = BtreeMeta;
 
 class IdBtree {
 	constructor(btreeMeta) {
@@ -415,7 +416,6 @@ class IndexBtree {
         btreeMeta.setMaxPageNo(1)
             .addIndexRootPage(key, rootPageNo);
         this.rootPage = indexPage;
-        return Promise.resolve(this);
     }
 
     updateRootPageNo(rootPageNo) {
@@ -427,12 +427,13 @@ class IndexBtree {
         let deepestPage = await this.walkDeepest(key);
 
         let hasRoom = deepestPage.hasRoomFor(key);
-        console.log('hasRoom', hasRoom, 'no', deepestPage.getPageNo());
+        console.log('hasRoom', hasRoom, 'no', key,
+	        deepestPage.getPageNo());
         if(hasRoom) {
             deepestPage.insertCell(key, id, 0);
             return ;
         }
-        this.rebalance(deepestPage, {key, id, childPageNo: 0});
+        await this.rebalance(deepestPage, {key, id, childPageNo: 0});
     }
 
     async walkDeepest(key) {
@@ -443,7 +444,10 @@ class IndexBtree {
         return startPage;
     }
 
-    rebalance(startPage, indexInfo) {
+    async rebalance(startPage, indexInfo) {
+    	if(startPage.getPageNo() === 0) {
+    		console.log('dddd')
+	    }
         if(startPage.hasRoomFor(indexInfo.key)) {
             startPage.insertCell(
                 indexInfo.key,
@@ -454,6 +458,9 @@ class IndexBtree {
         } else {
             let splices = startPage.half(indexInfo);
             let middleCellInfo = splices.shift();
+            if(!middleCellInfo) {
+            	console.log('ddd')
+            }
             let pageType = PAGE_TYPE_INDEX;
             if(startPage.isLeaf()) {
                 pageType |= PAGE_TYPE_LEAF;
@@ -462,19 +469,20 @@ class IndexBtree {
             }
 
             if(startPage.isRoot()) {
-                startPage.setType(pageType);
 				let splitPageNo = this.btreeMeta.increaseMaxPageNo();
 				let rootPageNo = this.btreeMeta.increaseMaxPageNo();
-				let splitPage = new IndexPage(splitPageNo, rootPageNo,
-						pageType);
-                let rootNewPage = new IndexPage(null, rootPageNo,
-                    (PAGE_TYPE_INDEX | PAGE_TYPE_ROOT));
+                startPage.setType(pageType);
+                startPage.setParentPage(rootPageNo);
+				let splitPage = new IndexPage(pageType, rootPageNo,
+						splitPageNo);
+                let rootNewPage = new IndexPage(
+                	(PAGE_TYPE_INDEX | PAGE_TYPE_ROOT), null, rootPageNo);
 
                 splices.forEach(s=> {
                     splitPage.insertCell(s.key, s.id, s.childPageNo);
                 });
 
-                rootNewPage.insertCell(MIN_KEY, null, startPage.getPageNo());
+                rootNewPage.insertCell(MIN_KEY, MIN_ID, startPage.getPageNo());
                 middleCellInfo.childPageNo = splitPageNo;
                 rootNewPage.insertCell(
                     middleCellInfo.key,
@@ -482,15 +490,30 @@ class IndexBtree {
                     middleCellInfo.childPageNo
                 );
                 this.rootPage = rootNewPage;
-                this.btreeMeta.updateIndexRootPage(rootNewPage.getPageNo());
-                return splitPageNo;
+                this.btreeMeta.updateIndexRootPage(rootNewPage.getPageNo(),
+	                    this.key);
+                if(IdCompare(indexInfo.key, middleCellInfo.key) >= 0) {
+                	return splitPageNo;
+                }
+                return startPage.getPageNo();
             } else {
-                let parentPage = startPage.getPageParent();
-                this.rebalance(parentPage, middleCellInfo);
+                let parentPage = await startPage.getPageParent();
+                let splitPageNo = this.btreeMeta.increaseMaxPageNo();
+                middleCellInfo.childPageNo = splitPageNo;
+                let splitParentNo = await this.rebalance(parentPage, middleCellInfo);
+                let splitPage = new IndexPage(pageType, splitParentNo,
+	                    splitPageNo);
+                splices.forEach(s=> {
+                	splitPage.insertCell(s.key, s.id, s.childPageNo);
+                });
+                if(IdCompare(indexInfo.key, middleCellInfo.key) >= 0) {
+                	return splitPageNo;
+                }
+                return startPage.getPageNo();
             }
         }
     }
 }
 
-exports.IndexPage = IndexPage;
+exports.IndexBtree = IndexBtree;
 

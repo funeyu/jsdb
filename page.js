@@ -18,8 +18,6 @@ const PAGE_TYPE_INTERNAL = 1 << 2;
 const PAGE_TYPE_ROOT = 1 << 3;
 const PAGE_TYPE_INDEX = 1 << 4;
 const PAGE_TYPE_SIZE = 1;     // the byteSize of the type
-const MIN_KEY = '-1';
-exports.MIN_KEY = MIN_KEY;
 
 const cache = Lru(64 * 1024);
 const ID_CELL_BYTES_SIZE = 8;
@@ -96,7 +94,8 @@ class DataPage {
 			// write size
 			this.data.writeInt16LE(this.size, PAGENO_BYTES);
 			// write offset
-			this.data.writeInt16LE(this.offset, PAGENO_BYTES + OFFSET_BYTES_SIZE);
+			this.data.writeInt16LE(this.offset,
+					PAGENO_BYTES + OFFSET_BYTES_SIZE);
 			return true;
 		} else {		// has no room for cellData
 			return false;
@@ -124,7 +123,8 @@ class DataPage {
         let maxIdInfo = this.__formId(this.size - 1);
         let minIdInfo = this.__formId(0);
 
-        if(IdCompare(idInfo, maxIdInfo) > 0 || IdCompare(idInfo, minIdInfo) < 0) {
+        if(IdCompare(idInfo, maxIdInfo) > 0
+	            || IdCompare(idInfo, minIdInfo) < 0) {
             console.log('no data matched id:', idInfo);
         } else if(IdCompare(idInfo, maxIdInfo) === 0) {
         	return this.__getDataByOffset(maxIdInfo['offset']);
@@ -164,7 +164,8 @@ class DataPage {
                 if(err) {
                 	return reject(err)
 				}
-                fs.writeSync(file, this.data, 0, PAGE_SIZE, this.pageNo * PAGE_SIZE);
+                fs.writeSync(file, this.data, 0, PAGE_SIZE,
+	                    this.pageNo * PAGE_SIZE);
                 resolve()
             });
 		})
@@ -226,7 +227,7 @@ class DataPage {
 const ONE_ID_CELL_BYTES = 10;
 const PAGENO_BYTES = 4;
 const SIZENO_BYTES_IN_CELL = 2;
-const ID_BYTES = 4;
+const ID_BYTES = 6;
 const ID_HEADER_PAGE_BYTES = 1 + PAGENO_BYTES * 4 + SIZENO_BYTES_IN_CELL;
 class IdPage {
 	/*
@@ -411,7 +412,8 @@ class IdPage {
 
 	// get the size of free room
 	freeData() {
-		return (PAGE_SIZE - ID_HEADER_PAGE_BYTES - this.size * ONE_ID_CELL_BYTES);
+		return (PAGE_SIZE - ID_HEADER_PAGE_BYTES
+				- this.size * ONE_ID_CELL_BYTES);
 	}
 
 	static getRootPage() {
@@ -538,7 +540,8 @@ class IdPage {
 
 	flush() {
 		fs.open(INDEXPATH, 'w', (err, file)=> {
-			fs.writeSync(file, this.data, 0, PAGE_SIZE, this.pageNo * PAGE_SIZE);
+			fs.writeSync(file, this.data, 0, PAGE_SIZE,
+				this.pageNo * PAGE_SIZE);
 		})
 	}
 };
@@ -560,21 +563,27 @@ class IndexPage {
 	/*
 		the format of this kind page is :
 -------------------------------------------------------------------------
-| type |  pageParent  |  size  |  pageNo  | offset | [cell1, cell2......]
+		| type |  pageParent  |  size  |  pageNo  | offset |
+				[offset1, offset2, offset3 ......]
+				......
+				[cell1, cell2, cell3......]
 -------------------------------------------------------------------------
-		every cell is : cellSize + childPageNo + id + rawKey
-
 		the size of the filed above is:
-		type: 		 1b  // this page type
-		pageParent:  4b  // this page's parent page number
-		size:        2b  // the size of cell
-		pageNo:      4b  // this page number
-		offset:      2b  // where this page write from 
+		Header:
+			type: 		 1b  // this page type
+			pageParent:  4b  // this page's parent page number
+			size:        2b  // the size of cell
+			pageNo:      4b  // this page number
+			offset:      2b  // where this page write from
 
-		cellOffset:  2b  // one cell bytes offset
-		childPageNo: 4b  // cell pointers for its child page
-		id:          4b  // the key pair <key, id>
-		rawKey: 	 nb  // the raw data of key
+		offsets:
+			offset:      2b  // pointer of the cellData
+
+		cellData:
+			dataSize     2b  // the total size of the cell
+			key:         nb  // the key content
+			id:          6b  // the key pair <key, id>
+			childPageNo: 4b  // cell pointers for its child page
 	*/
 	constructor(type, pageParent, pageNo) {
 		this.data = Buffer.alloc(PAGE_SIZE);
@@ -622,9 +631,10 @@ class IndexPage {
 
 	// true: this page has room for key, false: not 
 	hasRoomFor(key) {
-		let free = this.freeData(), oneCellBytes = this.oneCellBytes(key);
-
-		return free >= oneCellBytes
+		let free = this.freeData(),
+			oneCellBytes = this.oneCellBytes(key);
+		// 需要的空间为一个cell的空间和一个offset指向；
+		return free >= (oneCellBytes + 2)
 	}	
 
 	setParentPage(pageNo) {
@@ -641,6 +651,9 @@ class IndexPage {
 
     setSize(size) {
 	    this.size = size;
+	    // the header is like: type(1b) + pageParent(4b) + size(2b) ...
+		this.data.writeInt16LE(size, 1 + 4);
+		return this;
     }
 
     getSize() {
@@ -676,8 +689,12 @@ class IndexPage {
 		let keySize = dataSize - ID_BYTES - PAGENO_BYTES;
 		let keyBuffer = data.slice(0, keySize);
 		let key = keyBuffer.toString();
+
 		let idBuffer = data.slice(keySize, ID_BYTES + keySize);
-		let id = idBuffer.readInt32LE(0);
+		let id = {timeId: null, count: null};
+		id.timeId = idBuffer.readInt32LE(0);
+		id.count = idBuffer.readInt16LE(4);
+
 		let childPageNoBuffer = data.slice(
 			keySize + ID_BYTES, PAGENO_BYTES + ID_BYTES + keySize);
 		let childPageNo = childPageNoBuffer.readInt16LE(0);
@@ -703,6 +720,7 @@ class IndexPage {
 				(this.size - position) * 2
 			);
 		this.size ++;
+		this.setSize(this.size);
 	}
 
 	// position starts from 0
@@ -786,18 +804,22 @@ class IndexPage {
                         resolve(page);
                     })
             })
-        })
+        });
+	}
 
-	} 
+    getPageParent() {
+        let parentNo = this.getParentPageNo();
+        return IndexPage.LoadPage(parentNo);
+    }
 
 	async findId(key) {
-		let cellInfo = this.__findNearestCellInfo(key)
+		let cellInfo = this.__findNearestCellInfo(key);
         if(cellInfo && compare(cellInfo.key, key) === 0) {
             return cellInfo.id
         }
 		console.log('cellInfo+++++++++++++++++++++++++++++++', cellInfo);
-		while(cellInfo.childPageNo >= 0) {
-			let childPage = await IndexPage.LoadPage(cellInfo.childPageNo)
+		while(cellInfo.childPageNo > 0) {
+			let childPage = await IndexPage.LoadPage(cellInfo.childPageNo);
 			cellInfo = childPage.__findNearestCellInfo(key);
             if(cellInfo && compare(cellInfo.key, key) === 0) {
                 return cellInfo.id
@@ -810,10 +832,14 @@ class IndexPage {
 		let totalByteSize =
             CELLDATA_BYTE_SIZE + keyByteSize + ID_BYTES + PAGENO_BYTES;
 		this.offset -= totalByteSize;
-		this.data.writeInt16LE(totalByteSize - CELLDATA_BYTE_SIZE, this.offset);
+		this.data.writeInt16LE(totalByteSize - CELLDATA_BYTE_SIZE,
+				this.offset);
 		this.data.write(key, this.offset + CELLDATA_BYTE_SIZE);
-		this.data.writeInt32LE(id,
+		// 依次写入id信息 timeId: 4b, count: 2b
+		this.data.writeInt32LE(id.timeId,
             this.offset + CELLDATA_BYTE_SIZE + keyByteSize);
+		this.data.writeInt16LE(id.count,
+			this.offset + CELLDATA_BYTE_SIZE + keyByteSize + 4);
 		this.data.writeInt32LE(childPageNo,
             this.offset + CELLDATA_BYTE_SIZE + keyByteSize + ID_BYTES);
 
@@ -844,8 +870,8 @@ class IndexPage {
 					return ;
 				} else {
 					let middleIndex = (minIndex + maxIndex) >>1;
-					let middleKey = this.getCellInfoByIndex(middleIndex)['key'];
-                    let nextKey = this.getCellInfoByIndex(middleIndex + 1)['key'];
+					let middleKey = this.getCellInfoByIndex(middleIndex).key;
+                    let nextKey = this.getCellInfoByIndex(middleIndex + 1).key;
                     // find the correct position
 					if(compare(nextKey, key) > 0
                         && compare(middleKey, key) <= 0) {
@@ -864,6 +890,7 @@ class IndexPage {
 			
 		} else {
 			this.size ++;
+			this.setSize(this.size);
 			this.data.writeInt16LE(this.offset, INDEXPAGE_HEADER_SIZE);
 		}
 	}
@@ -886,13 +913,12 @@ class IndexPage {
 		if(this.type & PAGE_TYPE_LEAF) {
 			return Promise.resolve(this);
 		}
-		let cellInfo = this.__findNearestCellInfo(key);	
-		let cachedPage = cache.get(cellInfo.childPageNo);
-		if(cachedPage) {
-			return Promise.resolve(cachedPage);
-		} else {
-			return IndexPage.LoadPage(cellInfo.childPageNo);
+		let cellInfo = this.__findNearestCellInfo(key);
+		if(!cellInfo) {
+			console.log('cellinfo',key);
 		}
+
+		return IndexPage.LoadPage(cellInfo.childPageNo);
 	}
 
 	// split into half by a indexPair
@@ -909,7 +935,8 @@ class IndexPage {
             tempArray.push(cellInfo);
 			if(i < this.size -1) {
 				let nextInfo = this.getCellInfoByIndex(i + 1);
-                if(compare(cellInfo.key, key) < 0 && compare(nextInfo.key, key) >= 0) {
+                if(compare(cellInfo.key, key) < 0
+	                && compare(nextInfo.key, key) >= 0) {
                     tempArray.push(insertCellInfo);
                 }
 			}

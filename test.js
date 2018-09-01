@@ -1,41 +1,41 @@
-const {IdBtree} = require('./btree.js');
-
-let idBtree = new IdBtree();
-let id;
-let idArray = [];
-let test = async (btree)=> {
-    for(let i = 0; i < 101; i ++) {
-        id = IdGen();
-        idArray.push(id);
-        if(i === 100) {
-            await btree.insertId(id, i);
-        } else {
-            await btree.insertId(id, i);
-        }
-    }
-    console.log('finished')
-}
-idBtree.then(btree=> {
-    // test(btree).then(()=> {
-    // 	console.log('19', idArray[1])
-    //    btree.findPageNo(idArray[47]).then(data=> {
-    //        console.log('data', data);
-    //    })
-    // });
-
-    btree.btreeMeta.addIndexRootPage('java', 12345);
-    btree.btreeMeta.addIndexRootPage('javanodejs',234);
-    btree.btreeMeta.addIndexRootPage('odejs', 78);
-    btree.btreeMeta.addIndexRootPage('hello', 89);
-    btree.btreeMeta.addIndexRootPage('javahello', 7);
-    btree.btreeMeta.addIndexRootPage('jeeee', 78);
-    btree.btreeMeta.addIndexRootPage('jjajf;a', 7897);
-    btree.btreeMeta.addIndexRootPage('ja;ajff',453);
-    btree.btreeMeta.addIndexRootPage('nodjes', 88773);
-    btree.btreeMeta.addIndexRootPage(';asfj;af', 988);
-    btree.btreeMeta.addIndexRootPage('quiet', 7897);
-    console.log('java', btree.btreeMeta.getIndexRootPageNo('nodjes'))
-});
+const {IdBtree, IndexBtree, BtreeMeta} = require('./btree.js');
+const {IdGen} = require('./utils');
+// let idBtree = new IdBtree();
+// let id;
+// let idArray = [];
+// let test = async (btree)=> {
+//     for(let i = 0; i < 101; i ++) {
+//         id = IdGen();
+//         idArray.push(id);
+//         if(i === 100) {
+//             await btree.insertId(id, i);
+//         } else {
+//             await btree.insertId(id, i);
+//         }
+//     }
+//     console.log('finished')
+// }
+// idBtree.then(btree=> {
+//     // test(btree).then(()=> {
+//     // 	console.log('19', idArray[1])
+//     //    btree.findPageNo(idArray[47]).then(data=> {
+//     //        console.log('data', data);
+//     //    })
+//     // });
+//
+//     btree.btreeMeta.addIndexRootPage('java', 12345);
+//     btree.btreeMeta.addIndexRootPage('javanodejs',234);
+//     btree.btreeMeta.addIndexRootPage('odejs', 78);
+//     btree.btreeMeta.addIndexRootPage('hello', 89);
+//     btree.btreeMeta.addIndexRootPage('javahello', 7);
+//     btree.btreeMeta.addIndexRootPage('jeeee', 78);
+//     btree.btreeMeta.addIndexRootPage('jjajf;a', 7897);
+//     btree.btreeMeta.addIndexRootPage('ja;ajff',453);
+//     btree.btreeMeta.addIndexRootPage('nodjes', 88773);
+//     btree.btreeMeta.addIndexRootPage(';asfj;af', 988);
+//     btree.btreeMeta.addIndexRootPage('quiet', 7897);
+//     console.log('java', btree.btreeMeta.getIndexRootPageNo('nodjes'))
+// });
 
 
 
@@ -59,3 +59,22 @@ idBtree.then(btree=> {
 //     	console.log('cellInfo', cellInfo)
 //     });
 // })
+const indexBtree = new IndexBtree(new BtreeMeta(Buffer.alloc(1024))
+        , 'name', 1);
+let ids = [];
+for(var i = 0; i < 1300; i ++) {
+    ids.push(IdGen());
+}
+let test = async function() {
+    for(var i = 0; i < 1200; i ++) {
+        if(i === 345) {
+            await indexBtree.insertKey('fuheyu' + i, ids[i]);
+        } else {
+            await indexBtree.insertKey('fuheyu'+ i, ids[i]);
+        }
+    }
+    let r = await indexBtree.rootPage.findId('fuheyu700');
+    console.log('r',  r);
+    console.log('result', ids[700])
+};
+test();

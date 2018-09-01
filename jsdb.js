@@ -1,6 +1,6 @@
 const {DataPage, IdPage} = require('./page.js');
 const {IdGen, jsonStringify, jsonParse} = require('./utils');
-const {IdBtree} = require('./btree.js');
+const {IdBtree, IndexBtree} = require('./btree.js');
 
 
 class jsDB {
