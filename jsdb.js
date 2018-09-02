@@ -1,4 +1,6 @@
-const {DataPage, IdPage} = require('./page.js');
+const {DataPage, IdPage, IndexPage,
+    PAGE_TYPE_ID, PAGE_TYPE_INTERNAL, PAGE_TYPE_INDEX,
+    PAGE_TYPE_ROOT, PAGE_TYPE_LEAF} = require('./page.js');
 const {IdGen, jsonStringify, jsonParse} = require('./utils');
 const {IdBtree, IndexBtree} = require('./btree.js');
 
@@ -21,6 +23,11 @@ class jsDB {
         // 先假定从零开始写
         return IdBtree.LoadFromScratch().then(idBtree=> {
             this.idBtree = idBtree;
+            this.keysMap = {};
+            let btreeMeta = idBtree.getBtreeMeta();
+            for (let key of keys) {
+                this.keysMap[key] = new IndexBtree(btreeMeta, key);
+            }
             return this;
         });
     }
@@ -51,7 +58,10 @@ class jsDB {
         // 1. 先写id索引树
         let idResult = await this.idBtree.insertId(id, pendingRecordPageNo);
         // todo 2.再写用户定义的索引树;
-
+        for(let key of this.keys) {
+            let indexBtree = this.keysMap[key];
+            await indexBtree.insertKey(jsonData[key], id);
+        }
         return id;
     }
 
@@ -62,17 +72,26 @@ class jsDB {
         let dataPage = await DataPage.load(this.directory, pageNo);
         return dataPage.getCellData(id);
     }
+
+    // findByKey({name: 'funer'})
+    async findByKey(key, value) {
+        //todo 校验没有该key的索引
+        let indexBtree = this.keysMap[key];
+        let id = await indexBtree.findId(value);
+        let result = await this.findById(id);
+        return result;
+    }
 }
 
 
 
 async function test() {
-    let db = await new jsDB('js');
-    for(var i = 0; i < 1000; i ++) {
+    let db = await new jsDB('js', 'name');
+    for(var i = 0; i < 10; i ++) {
         let id = await db.put({name: 'name' + i});
         console.log('id', id);
-        let result = await db.findById(id);
-        console.log('result', result)
     }
+    let result = await db.findByKey('name', 'name1');
+    console.log('result', result)
 }
 test();

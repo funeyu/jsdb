@@ -184,7 +184,7 @@ class DataPage {
 
 		page = new DataPage(pageNo);
 		let loadFromDisk = new Promise((resolve, reject)=> {
-			fs.open(filePath, 'rw', (err, file)=> {
+			fs.open(filePath, 'r', (err, file)=> {
 				if(err) {
 					return reject(err);
 				}
@@ -811,21 +811,6 @@ class IndexPage {
         let parentNo = this.getParentPageNo();
         return IndexPage.LoadPage(parentNo);
     }
-
-	async findId(key) {
-		let cellInfo = this.__findNearestCellInfo(key);
-        if(cellInfo && compare(cellInfo.key, key) === 0) {
-            return cellInfo.id
-        }
-		console.log('cellInfo+++++++++++++++++++++++++++++++', cellInfo);
-		while(cellInfo.childPageNo > 0) {
-			let childPage = await IndexPage.LoadPage(cellInfo.childPageNo);
-			cellInfo = childPage.__findNearestCellInfo(key);
-            if(cellInfo && compare(cellInfo.key, key) === 0) {
-                return cellInfo.id
-            }
-		}
-	}
 
 	insertCell(key, id, childPageNo) {
 		let keyByteSize = ByteSize(key);

@@ -310,6 +310,10 @@ class IdBtree {
 		return new IdBtree(btreeMeta);
 	}
 
+	getBtreeMeta () {
+		return this.btreeMeta;
+	}
+
 	async __diveIntoLeaf(idInfo) {
 		let startPage = this.rootPage;
 		while(!startPage.isLeaf()) {
@@ -407,15 +411,19 @@ class IdBtree {
 exports.IdBtree = IdBtree;
 
 class IndexBtree {
-    constructor(btreeMeta, key, rootPageNo) {
+    constructor(btreeMeta, key) {
         this.btreeMeta = btreeMeta;
         this.key = key;
-        this.rootPageNo = rootPageNo;
+        this.rootPageNo = btreeMeta.increaseMaxPageNo();
         let indexPage = new IndexPage(
-            PAGE_TYPE_INDEX|PAGE_TYPE_ROOT|PAGE_TYPE_LEAF, -1, 1);
-        btreeMeta.setMaxPageNo(1)
-            .addIndexRootPage(key, rootPageNo);
+            PAGE_TYPE_INDEX|PAGE_TYPE_ROOT|PAGE_TYPE_LEAF,
+	        -1, this.rootPageNo);
+        btreeMeta.addIndexRootPage(key, this.rootPageNo);
         this.rootPage = indexPage;
+    }
+
+    getRootPage() {
+        return this.rootPage;
     }
 
     updateRootPageNo(rootPageNo) {
@@ -434,6 +442,22 @@ class IndexBtree {
             return ;
         }
         await this.rebalance(deepestPage, {key, id, childPageNo: 0});
+    }
+
+    async findId(key) {
+    	let startPage = this.rootPage;
+        let cellInfo = startPage.__findNearestCellInfo(key);
+        if(cellInfo && compare(cellInfo.key, key) === 0) {
+            return cellInfo.id
+        }
+        console.log('cellInfo+++++++++++++++++++++++++++++++', cellInfo);
+        while(cellInfo.childPageNo > 0) {
+            let childPage = await IndexPage.LoadPage(cellInfo.childPageNo);
+            cellInfo = childPage.__findNearestCellInfo(key);
+            if(cellInfo && compare(cellInfo.key, key) === 0) {
+                return cellInfo.id
+            }
+        }
     }
 
     async walkDeepest(key) {
