@@ -1,10 +1,14 @@
-const {DataPage, IdPage, IndexPage, 
+const fs = require('fs');
+const path = require('path');
+
+const {DataPage, IdPage, IndexPage,
 	PAGE_TYPE_ID, 
 	PAGE_TYPE_INDEX, 
 	PAGE_TYPE_ROOT,
 	PAGE_TYPE_INTERNAL,
 	PAGE_TYPE_LEAF,
-    PAGE_SIZE
+    PAGE_SIZE,
+	INDEXPATH
 } = require('./page.js');
 const {MIN_KEY, MIN_ID} = require('./constants');
 const {compare, IdGen, IdCompare, hash, ByteSize} = require('./utils.js');
@@ -59,6 +63,46 @@ class BtreeMeta {
 			this.offset = PAGE_SIZE;
 			this.data.writeInt16LE(PAGE_SIZE, ID_BTREE_META_HEADER -2);
 		}
+	}
+
+	static LoadFromDisk(directory) {
+		// 读取首页
+		let page0Buffer = Buffer.alloc(PAGE_SIZE);
+		let filePath = path.join(directory, INDEXPATH);
+        return new Promise((resolve, reject)=> {
+            fs.open(filePath, 'r', (err, file)=> {
+                if(err) {
+                    return reject(err);
+                }
+                fs.read(file, page0Buffer, 0, PAGE_SIZE, 0,
+                    (err, data)=> {
+                        if(err) {
+                            return reject(err);
+                        }
+                        resolve(new BtreeMeta(page0Buffer));
+                    });
+            })
+        });
+	}
+
+	// 返回所有的key
+	keys() {
+        let beginOffset = PAGE_SIZE;
+        // 先粗暴的将所有的key先收集起来, 再重新添加
+        let keys = [];
+        while(beginOffset >= this.offset) {
+            let rootPageNo = this.data.readInt32LE(beginOffset - 4);
+            let keySize = this.data.readInt8(beginOffset - 7);
+            let key = this.data.slice(beginOffset - 7 - keySize,
+                beginOffset - 7).toString();
+            keys.push({
+                key,
+                rootPageNo
+            });
+            beginOffset -= (7 + keySize);
+        }
+
+        return keys;
 	}
 
 	idWorkingOnPageNo() {
@@ -157,18 +201,7 @@ class BtreeMeta {
 		this.slotSize <<= 1;
 		let beginOffset = PAGE_SIZE;
 		// 先粗暴的将所有的key先收集起来, 再重新添加
-		let keys = [];
-		while(beginOffset >= this.offset) {
-			let rootPageNo = this.data.readInt32LE(beginOffset - 4);
-			let keySize = this.data.readInt8(beginOffset - 7);
-			let key = this.data.slice(beginOffset - 7 - keySize,
-					beginOffset - 7).toString();
-			keys.push({
-				key,
-				rootPageNo
-			});
-			beginOffset -= (7 + keySize);
-		}
+		let keys = this.keys();
 
 		this.btreeSize = 0;
 		this.offset = PAGE_SIZE;
@@ -411,15 +444,27 @@ class IdBtree {
 exports.IdBtree = IdBtree;
 
 class IndexBtree {
-    constructor(btreeMeta, key) {
+    constructor(btreeMeta, key, fromDisk) {
         this.btreeMeta = btreeMeta;
         this.key = key;
+        if(fromDisk) {
+        	let rootPageNo = btreeMeta.getIndexRootPageNo(key);
+        	this.rootPageNo = rootPageNo;
+        	return;
+        }
         this.rootPageNo = btreeMeta.increaseMaxPageNo();
         let indexPage = new IndexPage(
             PAGE_TYPE_INDEX|PAGE_TYPE_ROOT|PAGE_TYPE_LEAF,
 	        -1, this.rootPageNo);
         btreeMeta.addIndexRootPage(key, this.rootPageNo);
         this.rootPage = indexPage;
+    }
+
+    async loadRootPage() {
+    	let rootPageNo = this.rootPageNo;
+    	let page = await IndexPage.LoadPage(rootPageNo);
+    	this.rootPage = page;
+    	return this;
     }
 
     getRootPage() {

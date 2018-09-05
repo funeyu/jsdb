@@ -136,8 +136,13 @@ const CreateFileIfNotExist = function(filePath) {
     for(let i = 0; i < pathSep.length; i ++) {
         if(pathSep[i]) {
             _path += (path.sep + pathSep[i]);
-            if(!fs.existsSync(_path)) {
+            if(pathSep[i].indexOf('.') ===-1 &&
+                !fs.existsSync(_path)) {
                 fs.mkdirSync(_path);
+            } else {
+                fs.open(_path, 'wx', (err, fd)=> {
+
+                })
             }
         }
     }

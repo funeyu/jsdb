@@ -1,35 +1,48 @@
+const path = require('path');
+
 const {DataPage, IdPage, IndexPage,
     PAGE_TYPE_ID, PAGE_TYPE_INTERNAL, PAGE_TYPE_INDEX,
-    PAGE_TYPE_ROOT, PAGE_TYPE_LEAF} = require('./page.js');
+    PAGE_TYPE_ROOT, PAGE_TYPE_LEAF,
+    PAGE_SIZE, INDEXPATH, FILEPATH} = require('./page.js');
 const {IdGen, jsonStringify, jsonParse} = require('./utils');
-const {IdBtree, IndexBtree} = require('./btree.js');
+const {IdBtree, IndexBtree, BtreeMeta} = require('./btree.js');
 
 
 class jsDB {
-    constructor(directory, ... keys) {
+    constructor(directory, btreeMeta, ... keys) {
         this.directory = directory;
         this.keys = keys;
         // 获取dataPage的最大值
         this.maxDataPage = DataPage.MaxPageNo(directory);
-        if(this.maxDataPage === 0) {
+        if(!btreeMeta) {
             this.currentDataPage = new DataPage(0);
             DataPage.InitFile(directory);
             IdPage.InitFile(directory);
+
+            // 先假定从零开始写
+            return IdBtree.LoadFromScratch().then(idBtree=> {
+                this.idBtree = idBtree;
+                this.keysMap = {};
+                let btreeMeta = idBtree.getBtreeMeta();
+                this.btreeMeta = btreeMeta;
+                for (let key of keys) {
+                    this.keysMap[key] = new IndexBtree(btreeMeta, key);
+                }
+                return this;
+            });
         } else {
             // dataPage 中有数据,读取最后一页的数据;
-            this.currentDataPage = DataPage.load(
+            this.currentDataPage = DataPage.load(directory,
                     this.maxDataPage - 1);
-        }
-        // 先假定从零开始写
-        return IdBtree.LoadFromScratch().then(idBtree=> {
-            this.idBtree = idBtree;
+            this.btreeMeta = btreeMeta;
             this.keysMap = {};
-            let btreeMeta = idBtree.getBtreeMeta();
-            for (let key of keys) {
-                this.keysMap[key] = new IndexBtree(btreeMeta, key);
+            for(let key of keys) {
+                console.log('key', key);
+                // 这里的indexBtree没有真正从磁盘读取；
+                // 在Connect 函数里要从新load from disk
+                this.keysMap[key] = new IndexBtree(btreeMeta, key, true);
             }
-            return this;
-        });
+        }
     }
 
     __setCurrentPage(pageNo) {
@@ -81,17 +94,56 @@ class jsDB {
         let result = await this.findById(id);
         return result;
     }
+
+    async flush() {
+        // 先写page0 也即是btreeMeta的data
+        await IndexPage.FlushPageToDisk(this.directory, this.btreeMeta.data, 0);
+
+        let keyPages = IndexPage.CachePage().values();
+        keyPages = keyPages.sort(
+            (next, pre)=> next.getPageNo() - pre.getPageNo());
+        for(let page of keyPages) {
+            await page.flush(this.directory);
+        }
+
+        let dataPages = DataPage.CachePage().values();
+        dataPages = dataPages.sort(
+            (next, pre)=> next.getPageNo() - pre.getPageNo());
+        for(let page of dataPages) {
+            await page.flush(this.directory);
+        }
+    }
+
+    static async Connect(directory) {
+        let btreeMeta = await BtreeMeta.LoadFromDisk(directory);
+        let keys = btreeMeta.keys();
+        let db = new jsDB(directory, btreeMeta, keys);
+        // 从磁盘里load rootPage数据到索引树
+        for(let key of keys) {
+            db.keysMap[key] = await db.keysMap[key].loadRootPage();
+        }
+
+        return db;
+    }
 }
 
 
 
 async function test() {
-    let db = await new jsDB('js', 'name');
-    for(var i = 0; i < 10; i ++) {
+    let db = await new jsDB('js', null, 'name');
+    for(var i = 0; i < 2; i ++) {
         let id = await db.put({name: 'name' + i});
         console.log('id', id);
     }
-    let result = await db.findByKey('name', 'name1');
-    console.log('result', result)
+
+    await db.flush();
+    // let result = await db.findByKey('name', 'name9');
+    // console.log('result', result)
+}
+
+async function connect() {
+    let db = jsDB.Connect('js');
+    console.log('db', db);
 }
 test();
+// connect();

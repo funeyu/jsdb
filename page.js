@@ -12,6 +12,8 @@ exports.PAGE_SIZE = PAGE_SIZE;
 const RECORD_ID_BYTES_SIZE = 6;
 const FILEPATH = 'js.db';
 const INDEXPATH = 'js.index';
+exports.FILEPATH = FILEPATH;
+exports.INDEXPATH = INDEXPATH;
 const PAGE_TYPE_ID = 1;
 const PAGE_TYPE_LEAF = 1 << 1;
 const PAGE_TYPE_INTERNAL = 1 << 2;
@@ -20,6 +22,7 @@ const PAGE_TYPE_INDEX = 1 << 4;
 const PAGE_TYPE_SIZE = 1;     // the byteSize of the type
 
 const cache = Lru(64 * 1024);
+const DATACACHE = Lru(64 * 64);
 const ID_CELL_BYTES_SIZE = 8;
 const DATA_PAGE_HEADER_BYTES_SIZE = 8;
 const DATA_CELL_MAX_SIZE = 256;
@@ -54,7 +57,7 @@ class DataPage {
 		this.size = 0;				// the size of data
 		this.offset = PAGE_SIZE;  	// write data from bottom up
 
-		cache.set(pageNo + '_Data', this);
+		DATACACHE.set(pageNo, this);
 	}
 	
 	freeData() {
@@ -158,9 +161,10 @@ class DataPage {
         }
 	}
 
-	flush() {
+	flush(directory) {
+        let filePath = path.join(directory, FILEPATH);
 		return new Promise((resolve, reject)=> {
-            fs.open('js.db', 'w', (err, file)=> {
+            fs.open(filePath, 'w', (err, file)=> {
                 if(err) {
                 	return reject(err)
 				}
@@ -177,7 +181,7 @@ class DataPage {
 			throw new Error('DataPage.load(), direcotry:%s not exits',
 					filePath);
 		}
-		let page = cache.get(pageNo + '_Data');
+		let page = DATACACHE.get(pageNo);
 		if(page) {
 			return page;
 		}
@@ -193,13 +197,13 @@ class DataPage {
 						if(err) {
 							return reject(err);
 						}
-						cache.set(pageNo + '_Data', page);
+						DATACACHE.set(pageNo, page);
 						resolve();
 					});
 				if(err) {
 					reject(err);
 				} else {
-					cache.set(pageNo + '_Data', page);
+					DATACACHE.set(pageNo, page);
 					resolve()
 				}
 			})
@@ -222,8 +226,15 @@ class DataPage {
         }
         return 0;
 	}
+
+	static CachePage() {
+		return DATACACHE;
+	}
 }
 
+class KeyPage {
+
+}
 const ONE_ID_CELL_BYTES = 10;
 const PAGENO_BYTES = 4;
 const SIZENO_BYTES_IN_CELL = 2;
@@ -538,25 +549,22 @@ class IdPage {
 		})                  
 	}
 
-	flush() {
-		fs.open(INDEXPATH, 'w', (err, file)=> {
-			fs.writeSync(file, this.data, 0, PAGE_SIZE,
-				this.pageNo * PAGE_SIZE);
-		})
+	flush(directory) {
+        let filePath = path.join(directory, INDEXPATH);
+        return new Promise((resolve, reject)=> {
+            fs.open(filePath, 'w', (err, file)=> {
+                if(err) {
+                    return reject(err);
+                }
+
+                fs.writeSync(file, this.data, 0, PAGE_SIZE,
+                    this.pageNo * PAGE_SIZE );
+                resolve(null);
+            })
+        });
 	}
 };
 
-const idPage = new IdPage(PAGE_TYPE_ID | PAGE_TYPE_ROOT | PAGE_TYPE_LEAF,
-		-1, 0);
-let idPage1 = IdGen();
-let idPage2 = IdGen();
-let idPage3 = IdGen();
-
-idPage.insertCell(idPage1, 0);
-idPage.insertCell(idPage2, 0);
-idPage.insertCell(idPage3, 4);
-console.log('childPageNo:', idPage.getChildPageNo(idPage3));
-console.log('++++++++++++++++++++++++++++++++++++++++++++++++')
 const INDEXPAGE_HEADER_SIZE = 1 + 4 + 2 + 4 + 2;
 const CELLDATA_BYTE_SIZE = 2;
 class IndexPage {
@@ -610,9 +618,6 @@ class IndexPage {
 		this.data.writeInt16LE(this.size, 5);  
 	}
 
-	static LoadKeyDictionary() {
-
-	}
 	oneCellBytes(key) {
 	    return ByteSize(key) + PAGENO_BYTES + CELLDATA_BYTE_SIZE + ID_BYTES;
     }
@@ -880,18 +885,32 @@ class IndexPage {
 		}
 	}
 
-    flushToDisk() {
+    flush(directory) {
+        let filePath = path.join(directory, INDEXPATH);
 	    return new Promise((resolve, reject)=> {
-	        fs.open(INDEXPATH, 'w', (err, file)=> {
+	        fs.open(filePath, 'w', (err, file)=> {
 	            if(err) {
 	                return reject(err);
                 }
 
                 fs.writeSync(file, this.data, 0, PAGE_SIZE,
-                    this.pageNo * PAGE_SIZE )
+                    this.pageNo * PAGE_SIZE );
                 resolve(null);
             })
         })
+    }
+
+    static FlushPageToDisk(directory, pageBuffer, pageNo) {
+		let filePath = path.join(directory, INDEXPATH);
+		return new Promise((resolve, reject)=> {
+			fs.open(filePath, 'w', (err, file)=> {
+				if(err) {
+					return reject(err);
+				}
+				fs.writeSync(file, pageBuffer, 0, PAGE_SIZE, pageNo * PAGE_SIZE);
+				resolve(null);
+			})
+		})
     }
 
 	getChildPage(key) {
@@ -948,6 +967,10 @@ class IndexPage {
 		}
 
 		return splitInfo;
+	}
+
+	static CachePage() {
+		return cache;
 	}
 }
 
