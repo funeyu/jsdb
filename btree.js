@@ -15,7 +15,7 @@ const {compare, IdGen, IdCompare, hash, ByteSize} = require('./utils.js');
 
 
 const ID_BTREE_META_BYTES = 8;
-const ID_BTREE_META_HEADER = 8 + 4 + 1 + 1 + 2 + 1;
+const ID_BTREE_META_HEADER = 8 + 4 + 1 + 1 + 2;
 const PAGE_NO_BYTES = 4;
 /*
 * Btree tree的元信息， 占据索引文件的第一个page, 用户索引的key大小不能大于32b
@@ -28,6 +28,8 @@ const PAGE_NO_BYTES = 4;
 *    rootPageNo(4b)+workingPageNo(4b)
 *  maxPageNo(4b):
 *    标识索引文件最大的页码,新建btree Page的时候都会自增1;
+*  btreeSize(1b):
+*  	存储btree索引树的size
 *  slotSize(1b)：
 *    如果btree有用户的索引,比如有btreeSize = 5, 则slotSize(1b)=2^3;
 *  offset(2b):
@@ -86,11 +88,11 @@ class BtreeMeta {
 	}
 
 	// 返回所有的key
-	keys() {
+	allKeys() {
         let beginOffset = PAGE_SIZE;
         // 先粗暴的将所有的key先收集起来, 再重新添加
         let keys = [];
-        while(beginOffset >= this.offset) {
+        while(beginOffset > this.offset) {
             let rootPageNo = this.data.readInt32LE(beginOffset - 4);
             let keySize = this.data.readInt8(beginOffset - 7);
             let key = this.data.slice(beginOffset - 7 - keySize,
@@ -201,7 +203,7 @@ class BtreeMeta {
 		this.slotSize <<= 1;
 		let beginOffset = PAGE_SIZE;
 		// 先粗暴的将所有的key先收集起来, 再重新添加
-		let keys = this.keys();
+		let keys = this.allKeys();
 
 		this.btreeSize = 0;
 		this.offset = PAGE_SIZE;
@@ -254,7 +256,8 @@ class BtreeMeta {
 		this.btreeSize ++;
 		this.data.writeInt8(this.btreeSize,
 				ID_BTREE_META_BYTES + PAGE_NO_BYTES);
-		this.offset -= (7 + keySize)
+		this.offset -= (7 + keySize);
+		this.data.writeInt16LE(this.offset, ID_BTREE_META_HEADER - 2);
 	}
 
 	addIndexRootPage(key, rootPageNo) {

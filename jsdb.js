@@ -33,10 +33,11 @@ class jsDB {
         } else {
             // dataPage 中有数据,读取最后一页的数据;
             this.currentDataPage = DataPage.load(directory,
-                    this.maxDataPage - 1);
+                    this.maxDataPage );
             this.btreeMeta = btreeMeta;
             this.keysMap = {};
             for(let key of keys) {
+                console.log('keys', keys);
                 console.log('key', key);
                 // 这里的indexBtree没有真正从磁盘读取；
                 // 在Connect 函数里要从新load from disk
@@ -116,8 +117,9 @@ class jsDB {
 
     static async Connect(directory) {
         let btreeMeta = await BtreeMeta.LoadFromDisk(directory);
-        let keys = btreeMeta.keys();
-        let db = new jsDB(directory, btreeMeta, keys);
+        // todo 这里可以将rootPage传给后面
+        let keys = btreeMeta.allKeys().map(k=> k.key);
+        let db = new jsDB(directory, btreeMeta, ... keys);
         // 从磁盘里load rootPage数据到索引树
         for(let key of keys) {
             db.keysMap[key] = await db.keysMap[key].loadRootPage();
@@ -142,8 +144,8 @@ async function test() {
 }
 
 async function connect() {
-    let db = jsDB.Connect('js');
+    let db = await jsDB.Connect('js');
     console.log('db', db);
 }
-test();
-// connect();
+// test();
+connect();

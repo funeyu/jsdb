@@ -164,13 +164,17 @@ class DataPage {
 	flush(directory) {
         let filePath = path.join(directory, FILEPATH);
 		return new Promise((resolve, reject)=> {
-            fs.open(filePath, 'w', (err, file)=> {
+            fs.open(filePath, 'a', (err, file)=> {
                 if(err) {
                 	return reject(err)
 				}
-                fs.writeSync(file, this.data, 0, PAGE_SIZE,
-	                    this.pageNo * PAGE_SIZE);
-                resolve()
+                fs.write(file, this.data, 0, PAGE_SIZE,
+	                    this.pageNo * PAGE_SIZE, (err, data)=> {
+                			if(err) {
+                				return reject(err);
+							}
+							resolve();
+					});
             });
 		})
 	}
@@ -220,7 +224,7 @@ class DataPage {
 
 	static MaxPageNo(directory) {
 		let filePath = path.join(directory, FILEPATH);
-		if(fs.exists(filePath)) {
+		if(fs.existsSync(filePath)) {
             const stat = fs.statSync(filePath);
             return stat.size / PAGE_SIZE;
         }
@@ -552,7 +556,7 @@ class IdPage {
 	flush(directory) {
         let filePath = path.join(directory, INDEXPATH);
         return new Promise((resolve, reject)=> {
-            fs.open(filePath, 'w', (err, file)=> {
+            fs.open(filePath, 'a', (err, file)=> {
                 if(err) {
                     return reject(err);
                 }
@@ -888,13 +892,18 @@ class IndexPage {
     flush(directory) {
         let filePath = path.join(directory, INDEXPATH);
 	    return new Promise((resolve, reject)=> {
-	        fs.open(filePath, 'w', (err, file)=> {
+	        fs.open(filePath, 'a', (err, file)=> {
 	            if(err) {
 	                return reject(err);
                 }
 
-                fs.writeSync(file, this.data, 0, PAGE_SIZE,
-                    this.pageNo * PAGE_SIZE );
+                fs.write(file, this.data, 0, PAGE_SIZE,
+                    this.pageNo * PAGE_SIZE, (err, data)=> {
+                		if(err) {
+                			return reject(err);
+						}
+						resolve();
+					});
                 resolve(null);
             })
         })
@@ -903,12 +912,16 @@ class IndexPage {
     static FlushPageToDisk(directory, pageBuffer, pageNo) {
 		let filePath = path.join(directory, INDEXPATH);
 		return new Promise((resolve, reject)=> {
-			fs.open(filePath, 'w', (err, file)=> {
+			fs.open(filePath, 'a', (err, file)=> {
 				if(err) {
 					return reject(err);
 				}
-				fs.writeSync(file, pageBuffer, 0, PAGE_SIZE, pageNo * PAGE_SIZE);
-				resolve(null);
+				fs.write(file, pageBuffer, 0, PAGE_SIZE, pageNo * PAGE_SIZE, (err, data)=> {
+					if(err) {
+						return reject(err);
+					}
+                    resolve(null);
+				});
 			})
 		})
     }
