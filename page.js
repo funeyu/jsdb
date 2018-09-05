@@ -789,7 +789,7 @@ class IndexPage {
 		}
         let page = new IndexPage();
         return new Promise((resolve, reject)=> {
-            fs.open(INDEXPATH, 'r', (err, file)=> {
+            fs.open('js/js.index', 'r', (err, file)=> {
                 if(err) {
                     return reject(err);
                 }

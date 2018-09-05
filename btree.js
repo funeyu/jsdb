@@ -53,12 +53,12 @@ class BtreeMeta {
 		this.maxPageNo = pageBuffer.readInt32LE(ID_BTREE_META_BYTES);
 		this.btreeSize = pageBuffer.readInt8(ID_BTREE_META_BYTES
 				+ PAGE_NO_BYTES);
-		let slotSize = pageBuffer.readInt8(ID_BTREE_META_HEADER -3);
-		if(!slotSize) {
+		this.slotSize = pageBuffer.readInt8(ID_BTREE_META_HEADER -3);
+		if(!this.slotSize) {
 			// 如果slotSize为空, 则置初始值 2^3
 			this.slotSize = 8;
-			this.data.writeInt8(this.slotSize, ID_BTREE_META_HEADER -3);
 		}
+        this.data.writeInt8(this.slotSize, ID_BTREE_META_HEADER -3);
 		this.offset = this.data.readInt16LE(ID_BTREE_META_HEADER - 2);
 		if(this.offset === 0) {
 			// 初始状态 offset为最大值
