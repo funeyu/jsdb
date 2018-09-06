@@ -30,7 +30,7 @@ class jsDB {
                 }
                 return this;
             });
-        } else {
+        } else {// 代表从disk里读取
             // dataPage 中有数据,读取最后一页的数据;
             this.currentDataPage = DataPage.load(directory,
                     this.maxDataPage );
@@ -48,6 +48,12 @@ class jsDB {
 
     __setCurrentPage(pageNo) {
         this.currentDataPage = new DataPage(pageNo);
+    }
+
+    // 这里只有在实例一个jsDB才会调用，并且是在从disk里读取
+    setIdBtree(idBtree) {
+        this.idBtree = idBtree;
+        return this;
     }
 
     async put(jsonData) {
@@ -83,7 +89,7 @@ class jsDB {
         // 先获取dataPageNo
         let pageNo = await this.idBtree.findPageNo(id);
         // load PageNo
-        let dataPage = await DataPage.load(this.directory, pageNo);
+        let dataPage = await DataPage.Load(this.directory, pageNo);
         return dataPage.getCellData(id);
     }
 
@@ -120,6 +126,9 @@ class jsDB {
         // todo 这里可以将rootPage传给后面
         let keys = btreeMeta.allKeys().map(k=> k.key);
         let db = new jsDB(directory, btreeMeta, ... keys);
+        // 先实例idBtree
+        let idBtree = await new IdBtree(btreeMeta);
+        db.setIdBtree(idBtree);
         // 从磁盘里load rootPage数据到索引树
         for(let key of keys) {
             db.keysMap[key] = await db.keysMap[key].loadRootPage();
@@ -145,7 +154,8 @@ async function test() {
 
 async function connect() {
     let db = await jsDB.Connect('js');
-    console.log('db', db);
+    let result = await db.findByKey('name', 'name1');
+    console.log('result', result);
 }
 // test();
 connect();

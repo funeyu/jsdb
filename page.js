@@ -123,7 +123,7 @@ class DataPage {
 	getCellData(idInfo) {
         let size = this.data.readInt16LE(PAGENO_BYTES);
 
-        let maxIdInfo = this.__formId(this.size - 1);
+        let maxIdInfo = this.__formId(size - 1);
         let minIdInfo = this.__formId(0);
 
         if(IdCompare(idInfo, maxIdInfo) > 0
@@ -179,7 +179,33 @@ class DataPage {
 		})
 	}
 
-	static async load(directory, pageNo) {
+	setPageNo(pageNo) {
+		this.pageNo = pageNo;
+		return this;
+	}
+
+	setSize(size) {
+		this.size = size;
+		return this;
+	}
+
+	setOffset(offset) {
+		this.offset = offset;
+		return this;
+	}
+
+	// header组成：pageNo(4b) + size(2b) + offset(2b)
+	__initPage() {
+		let pageNo = this.data.readInt32LE(0);
+		let size = this.data.readInt16LE(4);
+		let offset = this.data.readInt16LE(6);
+
+		this.setPageNo(pageNo)
+			.setSize(size)
+			.setOffset(offset);
+	}
+
+	static async Load(directory, pageNo) {
 		let filePath = path.join(directory, FILEPATH);
 		if(!fs.existsSync(filePath)) {
 			throw new Error('DataPage.load(), direcotry:%s not exits',
@@ -201,6 +227,7 @@ class DataPage {
 						if(err) {
 							return reject(err);
 						}
+						page.__initPage();
 						DATACACHE.set(pageNo, page);
 						resolve();
 					});
@@ -458,6 +485,11 @@ class IdPage {
 		})
 	}
 
+	increaseSize() {
+		this.size ++;
+		this.setSize(this.size, true);
+	}
+
 	insertCell(id, childPageNo) {
 
 		if (this.freeData() >= ONE_ID_CELL_BYTES) {
@@ -465,7 +497,7 @@ class IdPage {
 			this.data.writeInt32LE(id.timeId, start);
 			this.data.writeInt16LE(id.count, start + 4);
 			this.data.writeInt32LE(childPageNo, start + 4 + 2);
-			this.size++;
+			this.increaseSize();
 			return true;
 		} else {
 			return false;
@@ -490,11 +522,11 @@ class IdPage {
 		let pageParent = dataBuffer.readInt32LE(PAGE_TYPE_SIZE);
 		let size = dataBuffer.readInt16LE(PAGE_TYPE_SIZE + PAGENO_BYTES);
 		let pageNo = dataBuffer.readInt32LE(PAGE_TYPE_SIZE + PAGENO_BYTES
-				+ ONE_ID_CELL_BYTES);
+				+ SIZENO_BYTES_IN_CELL);
 		let prePageNo = dataBuffer.readInt32LE(PAGE_TYPE_SIZE
-				+ PAGENO_BYTES * 2 + ONE_ID_CELL_BYTES);
+				+ PAGENO_BYTES * 2 + SIZENO_BYTES_IN_CELL);
 		let nextPageNo = dataBuffer.readInt32LE(PAGE_TYPE_SIZE
-				+ PAGENO_BYTES * 3 + ONE_ID_CELL_BYTES);
+				+ PAGENO_BYTES * 3 + SIZENO_BYTES_IN_CELL);
 
 		this.setType(type)
 			.setPageParent(pageParent)
@@ -505,13 +537,14 @@ class IdPage {
 
 	}
 	static Load(pageNo) {
+		let filePath = path.join('js', INDEXPATH);
 		return new Promise((resolve, reject)=> {
             let cachedPage = cache.get(pageNo);
             if(cachedPage) {
             	return resolve(cachedPage)
             }
             let page = new IdPage();
-            fs.open(INDEXPATH, 'r', (err, file)=> {
+            fs.open(filePath, 'r', (err, file)=> {
                 fs.read(file, page.data, 0, PAGE_SIZE, pageNo * PAGE_SIZE,
                     (err, data)=> {
 	                    page.__initPage();

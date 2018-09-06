@@ -318,6 +318,7 @@ class IdBtree {
             }
             let idPage = new IdPage(PAGE_TYPE_ID|PAGE_TYPE_ROOT|PAGE_TYPE_LEAF,
                 -1, 1);
+            idPage.setPageNo(1);
             this.btreeMeta.setMaxPageNo(1)
                 .setIdBtreeMeta({
                     rootPageNo: 1,
