@@ -229,19 +229,13 @@ class DataPage {
 						}
 						page.__initPage();
 						DATACACHE.set(pageNo, page);
-						resolve();
+						resolve(page);
 					});
-				if(err) {
-					reject(err);
-				} else {
-					DATACACHE.set(pageNo, page);
-					resolve()
-				}
 			})
 		});
 
-		await loadFromDisk;
-		return page;
+		let filledPage = await loadFromDisk;
+		return filledPage;
 	}
 
 	static InitFile(directory) {

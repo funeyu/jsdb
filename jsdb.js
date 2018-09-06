@@ -32,7 +32,7 @@ class jsDB {
             });
         } else {// 代表从disk里读取
             // dataPage 中有数据,读取最后一页的数据;
-            this.currentDataPage = DataPage.load(directory,
+            this.currentDataPage = DataPage.Load(directory,
                     this.maxDataPage );
             this.btreeMeta = btreeMeta;
             this.keysMap = {};
@@ -142,8 +142,8 @@ class jsDB {
 
 async function test() {
     let db = await new jsDB('js', null, 'name');
-    for(var i = 0; i < 2; i ++) {
-        let id = await db.put({name: 'name' + i});
+    for(var i = 0; i < 200; i ++) {
+        let id = await db.put({name: 'name' + i, className: 'super' + i});
         console.log('id', id);
     }
 
