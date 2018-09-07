@@ -148,6 +148,11 @@ class BtreeMeta {
 		this.idBtreeMeta.workingPageNo = pageNo;
 		this.data.writeInt32LE(pageNo, 4);
 	}
+
+	setRootPageNo(pageNo) {
+		this.idBtreeMeta.rootPageNo = pageNo;
+		this.data.writeInt32LE(pageNo, 0);
+	}
 	getMaxPageNo() {
 		return this.maxPageNo;
 	}
@@ -301,7 +306,7 @@ class BtreeMeta {
 		if(!metaInfo) {
 			throw new Error(`BtreeMeta cannot update key(${key}) not exists!`);
 		}
-		this.__changeRootPageNo(metaInfo.offset, metaInfo.rootPageNo);
+		this.__changeRootPageNo(metaInfo.offset, rootPageNo);
 	}
 	//=======================================================================
 }
@@ -383,6 +388,9 @@ class IdBtree {
 				let idRootPage = new IdPage(PAGE_TYPE_ID|PAGE_TYPE_ROOT, -1,
 						maxPageNo);
 				this.rootPage = idRootPage;
+                // 记录idBtree的rootPage
+                this.btreeMeta.setRootPageNo(maxPageNo);
+
 				let minIdInfo = page.getMinIdInfo();
 				idRootPage.insertCell(minIdInfo.id, page.getPageNo());
 				maxPageNo++;
@@ -502,7 +510,9 @@ class IndexBtree {
         console.log('cellInfo+++++++++++++++++++++++++++++++', cellInfo);
         while(cellInfo.childPageNo > 0) {
             let childPage = await IndexPage.LoadPage(cellInfo.childPageNo);
+            console.log('childPage', childPage);
             cellInfo = childPage.__findNearestCellInfo(key);
+            console.log('cellINfo', cellInfo);
             if(cellInfo && compare(cellInfo.key, key) === 0) {
                 return cellInfo.id
             }

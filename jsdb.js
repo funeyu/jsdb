@@ -93,13 +93,19 @@ class jsDB {
         return dataPage.getCellData(id);
     }
 
-    // findByKey({name: 'funer'})
     async findByKey(key, value) {
         //todo 校验没有该key的索引
         let indexBtree = this.keysMap[key];
-        let id = await indexBtree.findId(value);
-        let result = await this.findById(id);
-        return result;
+        try {
+            let id = await indexBtree.findId(value);
+            console.log('id',id);
+            let result = await this.findById(id);
+            return result;
+        } catch(err) {
+            console.log('err', err)
+        }
+
+
     }
 
     async flush() {
@@ -154,7 +160,7 @@ async function test() {
 
 async function connect() {
     let db = await jsDB.Connect('js');
-    let result = await db.findByKey('name', 'name13');
+    let result = await db.findByKey('name', 'name944');
     console.log('result', result);
 }
 // test();

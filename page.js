@@ -837,7 +837,7 @@ class IndexPage {
                         let type = page.data.readInt8(0);
                         page.setType(type);
                         let pageParent = page.data.readInt32LE(1);
-                        page.setPageNo(pageParent);
+                        page.setParentPage(pageParent);
                         let size = page.data.readInt16LE(1+4);
                         page.setSize(size);
                         let pageNo = page.data.readInt32LE(1+4+2);
