@@ -663,6 +663,8 @@ class IndexPage {
 
 	setType(type) {
 	    this.type = type;
+	    this.data.writeInt8(type, 0);
+	    return this;
     }
 
 	// true: this page has room for key, false: not 
@@ -675,6 +677,8 @@ class IndexPage {
 
 	setParentPage(pageNo) {
         this.pageParent = pageNo;
+        this.data.writeInt32LE(pageNo, 1);
+        return this;
 	}
 
 	getParentPageNo() {
@@ -683,6 +687,8 @@ class IndexPage {
 
 	setPageNo(pageNo) {
 	    this.pageNo = pageNo;
+	    this.data.writeInt32LE(pageNo, 1 + 4 + 2);
+	    return this;
     }
 
     setSize(size) {
@@ -702,6 +708,8 @@ class IndexPage {
 
 	setOffset(offset) {
 	    this.offset = offset;
+	    this.data.writeInt16LE(offset, 1 + 4 + 2 + 4);
+	    return this;
     }
 
     getOffset() {
@@ -733,7 +741,7 @@ class IndexPage {
 
 		let childPageNoBuffer = data.slice(
 			keySize + ID_BYTES, PAGENO_BYTES + ID_BYTES + keySize);
-		let childPageNo = childPageNoBuffer.readInt16LE(0);
+		let childPageNo = childPageNoBuffer.readInt32LE(0);
 
 		return {key, id, childPageNo}
 	}
@@ -834,7 +842,7 @@ class IndexPage {
                         page.setSize(size);
                         let pageNo = page.data.readInt32LE(1+4+2);
                         page.setPageNo(pageNo);
-                        let offset = page.data.readInt16LE(1+4+2+2);
+                        let offset = page.data.readInt16LE(1+4+2+4);
                         page.setOffset(offset);
 
                         resolve(page);
@@ -849,10 +857,16 @@ class IndexPage {
     }
 
 	insertCell(key, id, childPageNo) {
+		if(childPageNo !== 0) {
+			console.log(childPageNo);
+		}
 		let keyByteSize = ByteSize(key);
 		let totalByteSize =
             CELLDATA_BYTE_SIZE + keyByteSize + ID_BYTES + PAGENO_BYTES;
 		this.offset -= totalByteSize;
+		// 先更新this.offset
+		this.setOffset(this.offset);
+
 		this.data.writeInt16LE(totalByteSize - CELLDATA_BYTE_SIZE,
 				this.offset);
 		this.data.write(key, this.offset + CELLDATA_BYTE_SIZE);
