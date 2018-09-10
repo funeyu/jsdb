@@ -421,8 +421,9 @@ class IdBtree {
 					this.btreeMeta.setIdBtreeWorkingPage(maxPageNo);
 					this.workingPage = nextPage;
                 }
-                page.setNextPage(maxPageNo);
-                nextPage.setPrePage(page.getPageNo());
+                this.btreeMeta.setMaxPageNo(maxPageNo);
+                page.setNextPage(maxPageNo, true);
+                nextPage.setPrePage(page.getPageNo(), true);
 				nextPage.insertCell(id, childPageNo);
 				return nextPage.getPageNo();
 			}
@@ -442,7 +443,7 @@ class IdBtree {
 		return
 	}
 
-	// 查找DataPage的pageNo
+	// 根据id查找DataPage的pageNo
 	async findPageNo(idInfo) {
 		let leafPage = await this.__diveIntoLeaf(idInfo);
 		if(!leafPage) {

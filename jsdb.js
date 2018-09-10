@@ -160,8 +160,12 @@ async function test() {
 
 async function connect() {
     let db = await jsDB.Connect('js');
-    let result = await db.findByKey('name', 'name944');
-    console.log('result', result);
+    for(let i =0; i < 1000; i ++ ) {
+        let result = await db.findByKey('name', 'name' + i);
+        if(!result) {
+            throw new Error('error!')
+        }
+    }
 }
 // test();
 connect();

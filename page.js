@@ -371,7 +371,7 @@ class IdPage {
 
 	__getCellInfoByIndex(index) {
         let cellByteSize = this.size * ONE_ID_CELL_BYTES;
-        // sizeOf(size) +
+        // sizeOf(type) +
         // sizeOf(paegParent, pageNo, prePage, nextPage) + sizeOf(size)
         let cellByteBegin = PAGE_TYPE_SIZE +
             PAGENO_BYTES * 4 + SIZENO_BYTES_IN_CELL;
