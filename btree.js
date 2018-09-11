@@ -384,9 +384,11 @@ class IdBtree {
 				pageType = pageType | PAGE_TYPE_INTERNAL
 			}
 			if(page.isRoot()) {
+				page.setType(pageType);
 				maxPageNo ++;
 				let idRootPage = new IdPage(PAGE_TYPE_ID|PAGE_TYPE_ROOT, -1,
 						maxPageNo);
+                page.setPageParent(maxPageNo, true);
 				this.rootPage = idRootPage;
                 // 记录idBtree的rootPage
                 this.btreeMeta.setRootPageNo(maxPageNo);
@@ -400,12 +402,6 @@ class IdBtree {
 				page.setNextPage(maxPageNo, true);
                 nextPage.insertCell(id, childPageNo);
 				nextPage.setPrePage(page.getPageNo(), true);
-				// 如果是叶节点,则需要记录workingPage
-				if(page.isLeaf()) {
-					// maxPageNo为nextPage的页码
-					this.btreeMeta.setIdBtreeWorkingPage(maxPageNo);
-					this.workingPage = nextPage;
-				}
 				this.btreeMeta.setMaxPageNo(maxPageNo);
 
 				return nextPage.getPageNo();
@@ -417,9 +413,11 @@ class IdBtree {
 					childPageNo: maxPageNo
 				});
 				let nextPage = new IdPage(pageType, pageNo, maxPageNo);
+                // 如果是叶节点,则需要记录workingPage
                 if(page.isLeaf()) {
-					this.btreeMeta.setIdBtreeWorkingPage(maxPageNo);
-					this.workingPage = nextPage;
+                    // maxPageNo为nextPage的页码
+                    this.btreeMeta.setIdBtreeWorkingPage(maxPageNo);
+                    this.workingPage = nextPage;
                 }
                 this.btreeMeta.setMaxPageNo(maxPageNo);
                 page.setNextPage(maxPageNo, true);
@@ -555,7 +553,7 @@ class IndexBtree {
             return startPage.getPageNo();
         } else {
             let splices = startPage.half(indexInfo);
-            let middleCellInfo = splices[0];
+            let middleCellInfo = Object.assign({}, splices[0]);
             let pageType = PAGE_TYPE_INDEX;
             if(startPage.isLeaf()) {
                 pageType |= PAGE_TYPE_LEAF;

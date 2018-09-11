@@ -77,7 +77,6 @@ class jsDB {
         // 依次写入btree索引页
         // 1. 先写id索引树
         let idResult = await this.idBtree.insertId(id, pendingRecordPageNo);
-        // todo 2.再写用户定义的索引树;
         for(let key of this.keys) {
             let indexBtree = this.keysMap[key];
             await indexBtree.insertKey(jsonData[key], id);
@@ -159,9 +158,14 @@ class jsDB {
 
 async function test() {
     let db = await new jsDB('js', null, 'name');
-    for(var i = 0; i < 1000; i ++) {
-        let id = await db.put({name: 'nameSex' + i, className: 'super' + i});
-        console.log('id', id);
+    for(var i = 0; i < 1581; i ++) {
+        if(i === 1580) {
+            console.log(i)
+            await db.put({name: 'nameSex' + i, className: 'super' + i});
+        } else {
+            let id = await db.put({name: 'nameSex' + i, className: 'super' + i});
+        }
+        // await db.put({name: 'nameSex' + i, className: 'superrman' + i});
     }
 
     await db.flush();
@@ -171,13 +175,14 @@ async function test() {
 
 async function connect() {
     let db = await jsDB.Connect('js');
-    for(let i =0; i < 1000; i ++ ) {
-        let result = await db.findAllByKey('name', 'nameSex' + i);
+    // await db.put({name: 'namessss2', className: 'superman'});
+    for(let i =0; i < 1580; i ++ ) {
+        let result = await db.findByKey('name', 'nameSex' + i);
         console.log('conecctttttttt', result);
         if(!result) {
             throw new Error('error!')
         }
     }
 }
-// test();
-connect();
+test();
+// connect();

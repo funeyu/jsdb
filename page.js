@@ -407,6 +407,8 @@ class IdPage {
 		}
 
 		while(maxIndex > minIndex) {
+            minCellInfo = this.__getCellInfoByIndex(minIndex);
+            maxCellInfo = this.__getCellInfoByIndex(maxIndex);
 			if(IdCompare(minCellInfo.id, id) === 0) {
 				return minCellInfo.childPageNo;
 			}
