@@ -777,7 +777,33 @@ class IndexPage {
 		return this.getCellByOffset(offset, index);
 	}
 
-	__findNearestCellInfo(key) {
+    // 找到最左的和key一样大小的cellInfo
+	__theLeftMostEqual(start, key) {
+		let cellInfo = this.getCellInfoByIndex(start);
+		while(compare(key, cellInfo['key']) === 0) {
+			if(start === 0) {
+				return {... cellInfo, cellIndex: 0};
+			}
+			start --;
+			cellInfo = this.getCellInfoByIndex(start);
+		}
+
+		return {... this.getCellInfoByIndex(start + 1), cellIndex: start + 1};
+	}
+
+    /**
+     * 获取左侧最接近的cell；
+     * 如 cells如下： (key1 < key2 < key3 < ...)
+     * ---------------------------------------------------------------------
+     * [key1, id1], [key1, id2], [key2, id3], [key2, id4], [key3, id4]......
+     * ---------------------------------------------------------------------
+     * 如果__findNearestCellInfo(key1)则返回的为id1;
+     *    __findNearestCellInfo(key2) 返回的为id3;
+     * @param key
+     * @returns {*}
+     * @private
+     */
+    findNearestCellInfo(key) {
 		if(this.size === 0) {
 			return;
 		}
@@ -793,18 +819,29 @@ class IndexPage {
 			let minCellInfo = this.getCellInfoByIndex(minIndex);
 			let maxCellInfo = this.getCellInfoByIndex(maxIndex);
 
+			if(minIndex + 1 === maxIndex
+				&& compare(key, minCellInfo.key) > 0
+				&& compare(key, maxCellInfo.key) < 0
+			) {
+					return {... minCellInfo, cellIndex: minIndex}
+			}
+
 			let middle = (minIndex + maxIndex) >> 1;
 			let middleCellInfo = this.getCellInfoByIndex(middle);
-			if(compare(key, maxCellInfo['key']) >= 0) {
-				return {... maxCellInfo, cellIndex: maxIndex}
+			if(compare(key, maxCellInfo.key) >= 0) {
+				// return {... maxCellInfo, cellIndex: maxIndex};
+				if(compare(key, maxCellInfo.key) > 0) {
+					return {... maxCellInfo, cellIndex: maxIndex};
+				}
+				return this.__theLeftMostEqual(maxIndex, key);
 			}
-			if(compare(key, minCellInfo['key']) <= 0) {
+			if(compare(key, minCellInfo.key) <= 0) {
 				return {... minCellInfo, cellIndex: 0}
 			}
 			if(compare(middleCellInfo.key, key) > 0) {
 				maxIndex = middle;
 			} else if(compare(middleCellInfo.key, key) === 0) {
-				return { ... middleCellInfo, cellIndex: middle};
+				return this.__theLeftMostEqual(middle, key);
 			} else {
 				let middleNext = middle + 1;
 				let middleNextCellInfo = this.getCellInfoByIndex(middleNext);
@@ -815,6 +852,32 @@ class IndexPage {
 				}
 			}
 		}
+	}
+
+	collectAllEqualIds(key) {
+    	let result = [];
+		let leftMost = this.findNearestCellInfo(key);
+		if(leftMost) {
+            let startCellInfo = leftMost;
+            let startIndex = leftMost.cellIndex;
+            do {
+                result.push(startCellInfo);
+                if (startIndex === this.size - 1) {
+                    return result;
+                }
+                startIndex ++;
+                startCellInfo = {
+	                ... this.getCellInfoByIndex(startIndex),
+	                cellIndex: startIndex
+                }
+            } while (compare(key, startCellInfo.key) === 0);
+        }
+
+		return result;
+	}
+
+	isLastCellInfo(cellIndex) {
+        return this.size === cellIndex;
 	}
 
 	static LoadPage(pageNo) {
@@ -967,11 +1030,11 @@ class IndexPage {
 		})
     }
 
-	getChildPage(key) {
+    getNearestChildPage(key) {
 		if(this.type & PAGE_TYPE_LEAF) {
 			return Promise.resolve(this);
 		}
-		let cellInfo = this.__findNearestCellInfo(key);
+		let cellInfo = this.findNearestCellInfo(key);
 		if(!cellInfo) {
 			console.log('cellinfo',key);
 		}

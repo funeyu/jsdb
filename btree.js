@@ -502,28 +502,42 @@ class IndexBtree {
         await this.rebalance(deepestPage, {key, id, childPageNo: 0});
     }
 
+    // 根据key查找一个idInfo
     async findId(key) {
-    	let startPage = this.rootPage;
-        let cellInfo = startPage.__findNearestCellInfo(key);
-        if(cellInfo && compare(cellInfo.key, key) === 0) {
-            return cellInfo.id
-        }
-        console.log('cellInfo+++++++++++++++++++++++++++++++', cellInfo);
-        while(cellInfo.childPageNo > 0) {
-            let childPage = await IndexPage.LoadPage(cellInfo.childPageNo);
-            console.log('childPage', childPage);
-            cellInfo = childPage.__findNearestCellInfo(key);
-            console.log('cellINfo', cellInfo);
-            if(cellInfo && compare(cellInfo.key, key) === 0) {
-                return cellInfo.id
-            }
-        }
+    	let deepestPage = await this.walkDeepest(key);
+    	let cellInfo = deepestPage.findNearestCellInfo(key);
+    	if(cellInfo && compare(cellInfo.key, key) === 0) {
+    		return cellInfo.id;
+	    }
+
+        // let startPage = this.rootPage;
+        // let cellInfo = startPage.__findNearestCellInfo(key);
+        // if(cellInfo && compare(cellInfo.key, key) === 0) {
+        //     return cellInfo.id
+        // }
+        //
+        // while(cellInfo.childPageNo > 0) {
+        //     let childPage = await IndexPage.LoadPage(cellInfo.childPageNo);
+        //     cellInfo = childPage.__findNearestCellInfo(key);
+        //     if(cellInfo && compare(cellInfo.key, key) === 0) {
+        //         return cellInfo.id
+        //     }
+        // }
     }
 
+    // 根据key查找多个idInfo
+    async findIds(key) {
+		let deepestPage = await this.walkDeepest(key);
+		// 带有cellIndex的cellInfo
+		let cellInfos = deepestPage.collectAllEqualIds(key);
+		// todo 处理跨页面相等key的情况
+		return cellInfos.map(cell=> cell.id);
+
+    }
     async walkDeepest(key) {
         let startPage = this.rootPage;
         while(!(startPage.getType() & PAGE_TYPE_LEAF)){
-            startPage = await startPage.getChildPage(key);
+            startPage = await startPage.getNearestChildPage(key);
         }
         return startPage;
     }
@@ -541,10 +555,7 @@ class IndexBtree {
             return startPage.getPageNo();
         } else {
             let splices = startPage.half(indexInfo);
-            let middleCellInfo = splices.shift();
-            if(!middleCellInfo) {
-            	console.log('ddd')
-            }
+            let middleCellInfo = splices[0];
             let pageType = PAGE_TYPE_INDEX;
             if(startPage.isLeaf()) {
                 pageType |= PAGE_TYPE_LEAF;

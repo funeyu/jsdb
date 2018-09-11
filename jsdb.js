@@ -104,8 +104,19 @@ class jsDB {
         } catch(err) {
             console.log('err', err)
         }
+    }
 
+    async findAllByKey(key, value) {
+        let indexBtree = this.keysMap[key];
 
+        let result = [];
+        let ids = await indexBtree.findIds(value);
+        for(let i = 0; i < ids.length; i ++) {
+            let rawData = await this.findById(ids[i]);
+            result.push(rawData);
+        }
+
+        return result;
     }
 
     async flush() {
@@ -149,7 +160,7 @@ class jsDB {
 async function test() {
     let db = await new jsDB('js', null, 'name');
     for(var i = 0; i < 1000; i ++) {
-        let id = await db.put({name: 'name' + i, className: 'super' + i});
+        let id = await db.put({name: 'nameSex' + i, className: 'super' + i});
         console.log('id', id);
     }
 
@@ -161,7 +172,8 @@ async function test() {
 async function connect() {
     let db = await jsDB.Connect('js');
     for(let i =0; i < 1000; i ++ ) {
-        let result = await db.findByKey('name', 'name' + i);
+        let result = await db.findAllByKey('name', 'nameSex' + i);
+        console.log('conecctttttttt', result);
         if(!result) {
             throw new Error('error!')
         }
