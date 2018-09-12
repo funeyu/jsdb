@@ -21,8 +21,8 @@ const PAGE_TYPE_ROOT = 1 << 3;
 const PAGE_TYPE_INDEX = 1 << 4;
 const PAGE_TYPE_SIZE = 1;     // the byteSize of the type
 
-const cache = Lru(64 * 1024);
-const DATACACHE = Lru(64 * 64);
+const cache = Lru(128 * 1024);
+const DATACACHE = Lru(64 * 64 * 32);
 const ID_CELL_BYTES_SIZE = 8;
 const DATA_PAGE_HEADER_BYTES_SIZE = 8;
 const DATA_CELL_MAX_SIZE = 256;
@@ -728,6 +728,9 @@ class IndexPage {
 
 	getCellByOffset(offset, index) {
 	    console.log('offset', offset, index);
+	    if(offset === 0) {
+	    	console.log(index);
+	    }
 		let dataSize = this.data.readInt16LE(offset);
 		let data = this.data.slice(
 			offset + CELLDATA_BYTE_SIZE, 
@@ -922,9 +925,6 @@ class IndexPage {
     }
 
 	insertCell(key, id, childPageNo) {
-		if(childPageNo !== 0) {
-			console.log(childPageNo);
-		}
 		let keyByteSize = ByteSize(key);
 		let totalByteSize =
             CELLDATA_BYTE_SIZE + keyByteSize + ID_BYTES + PAGENO_BYTES;
@@ -932,6 +932,9 @@ class IndexPage {
 		// 先更新this.offset
 		this.setOffset(this.offset);
 
+		if(this.size > 20) {
+			console.log(this);
+		}
 		this.data.writeInt16LE(totalByteSize - CELLDATA_BYTE_SIZE,
 				this.offset);
 		this.data.write(key, this.offset + CELLDATA_BYTE_SIZE);

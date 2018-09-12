@@ -385,7 +385,7 @@ class IdBtree {
 			}
 			if(page.isRoot()) {
 				page.setType(pageType);
-				maxPageNo ++;
+				maxPageNo = this.btreeMeta.increaseMaxPageNo();
 				let idRootPage = new IdPage(PAGE_TYPE_ID|PAGE_TYPE_ROOT, -1,
 						maxPageNo);
                 page.setPageParent(maxPageNo, true);
@@ -395,18 +395,18 @@ class IdBtree {
 
 				let minIdInfo = page.getMinIdInfo();
 				idRootPage.insertCell(minIdInfo.id, page.getPageNo());
-				maxPageNo++;
+
+				maxPageNo=this.btreeMeta.increaseMaxPageNo();
 				let nextPage = new IdPage(pageType, idRootPage.getPageNo(),
 						maxPageNo);
                 idRootPage.insertCell(id, maxPageNo);
 				page.setNextPage(maxPageNo, true);
                 nextPage.insertCell(id, childPageNo);
 				nextPage.setPrePage(page.getPageNo(), true);
-				this.btreeMeta.setMaxPageNo(maxPageNo);
 
 				return nextPage.getPageNo();
 			} else {
-				maxPageNo ++;
+				maxPageNo = this.btreeMeta.increaseMaxPageNo();
 				let parentPage = await IdPage.Load(page.getPageParent());
 				let pageNo = await this.insertRecursily(parentPage, {
 					id: id,
@@ -419,7 +419,6 @@ class IdBtree {
                     this.btreeMeta.setIdBtreeWorkingPage(maxPageNo);
                     this.workingPage = nextPage;
                 }
-                this.btreeMeta.setMaxPageNo(maxPageNo);
                 page.setNextPage(maxPageNo, true);
                 nextPage.setPrePage(page.getPageNo(), true);
 				nextPage.insertCell(id, childPageNo);
@@ -541,9 +540,6 @@ class IndexBtree {
     }
 
     async rebalance(startPage, indexInfo) {
-    	if(startPage.getPageNo() === 0) {
-    		console.log('dddd')
-	    }
         if(startPage.hasRoomFor(indexInfo.key)) {
             startPage.insertCell(
                 indexInfo.key,
@@ -571,10 +567,18 @@ class IndexBtree {
                 let rootNewPage = new IndexPage(
                 	(PAGE_TYPE_INDEX | PAGE_TYPE_ROOT), null, rootPageNo);
 
-                splices.forEach(s=> {
-                    splitPage.insertCell(s.key, s.id, s.childPageNo);
-                });
-
+                for(let i = 0; i < splices.length; i ++) {
+                	let s = splices[i];
+                	splitPage.insertCell(s.key, s.id, s.childPageNo);
+                }
+				if(!startPage.isLeaf()) {
+                	for(let i = 0; i < splices.length; i++) {
+                		let s = splices[i];
+                        // 同时修改childPage的parentPage
+                        let childPage = await IndexPage.LoadPage(s.childPageNo);
+                        childPage.setParentPage(splitPageNo);
+	                }
+				}
                 rootNewPage.insertCell(MIN_KEY, MIN_ID, startPage.getPageNo());
                 middleCellInfo.childPageNo = splitPageNo;
                 rootNewPage.insertCell(
@@ -596,9 +600,19 @@ class IndexBtree {
                 let splitParentNo = await this.rebalance(parentPage, middleCellInfo);
                 let splitPage = new IndexPage(pageType, splitParentNo,
 	                    splitPageNo);
-                splices.forEach(s=> {
-                	splitPage.insertCell(s.key, s.id, s.childPageNo);
-                });
+                for(let i = 0; i < splices.length; i ++) {
+                	let s = splices[i];
+                    splitPage.insertCell(s.key, s.id, s.childPageNo);
+                }
+                if(!startPage.isLeaf()) {
+                	for(let i = 0; i < splices.length; i ++) {
+                		let s = splices[i];
+                		// 同时修改childPage的parentPage
+                        let childPage = await IndexPage.LoadPage(s.childPageNo);
+                        childPage.setParentPage(splitPageNo);
+	                }
+
+                }
                 if(IdCompare(indexInfo.key, middleCellInfo.key) >= 0) {
                 	return splitPageNo;
                 }

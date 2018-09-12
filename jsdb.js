@@ -158,13 +158,8 @@ class jsDB {
 
 async function test() {
     let db = await new jsDB('js', null, 'name');
-    for(var i = 0; i < 1581; i ++) {
-        if(i === 1580) {
-            console.log(i)
-            await db.put({name: 'nameSex' + i, className: 'super' + i});
-        } else {
-            let id = await db.put({name: 'nameSex' + i, className: 'super' + i});
-        }
+    for(let i = 0; i < 50000; i ++) {
+        let id = await db.put({name: 'nameSex' + i, className: 'super' + i});
         // await db.put({name: 'nameSex' + i, className: 'superrman' + i});
     }
 
@@ -176,7 +171,7 @@ async function test() {
 async function connect() {
     let db = await jsDB.Connect('js');
     // await db.put({name: 'namessss2', className: 'superman'});
-    for(let i =0; i < 1580; i ++ ) {
+    for(let i =0; i < 4602; i ++ ) {
         let result = await db.findByKey('name', 'nameSex' + i);
         console.log('conecctttttttt', result);
         if(!result) {
@@ -184,5 +179,5 @@ async function connect() {
         }
     }
 }
-test();
-// connect();
+// test();
+connect();
