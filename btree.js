@@ -589,7 +589,7 @@ class IndexBtree {
                 this.rootPage = rootNewPage;
                 this.btreeMeta.updateIndexRootPage(rootNewPage.getPageNo(),
 	                    this.key);
-                if(IdCompare(indexInfo.key, middleCellInfo.key) >= 0) {
+                if(compare(indexInfo.key, middleCellInfo.key) >= 0) {
                 	return splitPageNo;
                 }
                 return startPage.getPageNo();
@@ -613,7 +613,7 @@ class IndexBtree {
 	                }
 
                 }
-                if(IdCompare(indexInfo.key, middleCellInfo.key) >= 0) {
+                if(compare(indexInfo.key, middleCellInfo.key) >= 0) {
                 	return splitPageNo;
                 }
                 return startPage.getPageNo();
