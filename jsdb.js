@@ -32,17 +32,19 @@ class jsDB {
             });
         } else {// 代表从disk里读取
             // dataPage 中有数据,读取最后一页的数据;
-            this.currentDataPage = DataPage.Load(directory,
-                    this.maxDataPage );
-            this.btreeMeta = btreeMeta;
-            this.keysMap = {};
-            for(let key of keys) {
-                console.log('keys', keys);
-                console.log('key', key);
-                // 这里的indexBtree没有真正从磁盘读取；
-                // 在Connect 函数里要从新load from disk
-                this.keysMap[key] = new IndexBtree(btreeMeta, key, true);
-            }
+             return DataPage.Load(directory, this.maxDataPage ).then(data=> {
+                 this.currentDataPage = data;
+                 this.btreeMeta = btreeMeta;
+                 this.keysMap = {};
+                 for(let key of keys) {
+                     console.log('keys', keys);
+                     console.log('key', key);
+                     // 这里的indexBtree没有真正从磁盘读取；
+                     // 在Connect 函数里要从新load from disk
+                     this.keysMap[key] = new IndexBtree(btreeMeta, key, true);
+                 }
+                 return this;
+            });
         }
     }
 
@@ -141,7 +143,7 @@ class jsDB {
         let btreeMeta = await BtreeMeta.LoadFromDisk(directory);
         // todo 这里可以将rootPage传给后面
         let keys = btreeMeta.allKeys().map(k=> k.key);
-        let db = new jsDB(directory, btreeMeta, ... keys);
+        let db = await new jsDB(directory, btreeMeta, ... keys);
         // 先实例idBtree
         let idBtree = await new IdBtree(btreeMeta);
         db.setIdBtree(idBtree);
@@ -163,6 +165,10 @@ async function test() {
         // await db.put({name: 'nameSex' + i, className: 'superrman' + i});
     }
 
+    let result = await db.findByKey('name', 'funer8090009000999');
+    console.log('result', result);
+
+    let id = await db.put({name: 'namessss2', className: 'superman'});
     await db.flush();
     // let result = await db.findByKey('name', 'name9');
     // console.log('result', result)
@@ -170,14 +176,19 @@ async function test() {
 
 async function connect() {
     let db = await jsDB.Connect('js');
-    // await db.put({name: 'namessss2', className: 'superman'});
-    for(let i =10000; i < 20000; i ++ ) {
-        let result = await db.findByKey('name', 'funer80900090009' + i);
-        console.log('conecctttttttt', result);
-        if(!result) {
-            throw new Error('error!')
-        }
-    }
+    let id = await db.put({name: 'namessss', className: 'superman'});
+    // await db.flush();
+
+    let result = await db.findByKey('name', 'namessss');
+    console.log(result);
+    // await db.flush();
+    // for(let i =30000; i < 40000; i ++ ) {
+    //     let result = await db.findByKey('name', 'funer80900090009' + i);
+    //     console.log('conecctttttttt', result);
+    //     if(!result) {
+    //         throw new Error('error!')
+    //     }
+    // }
 }
 // test();
 connect();

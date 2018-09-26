@@ -54,6 +54,7 @@ class DataPage {
 	constructor(pageNo) {
 		this.pageNo = pageNo;      	// start from zero
 		this.data = Buffer.alloc(PAGE_SIZE);
+		this.data.writeInt32LE(pageNo, 0);
 		this.size = 0;				// the size of data
 		this.offset = PAGE_SIZE;  	// write data from bottom up
 
@@ -299,7 +300,7 @@ class IdPage {
 			cache.set(pageNo, this);
 		}
 
-		this.data.writeInt8(type, 0);
+		type && this.data.writeInt8(type, 0);
 		this.size = 0;
 		this.data.writeInt16LE(this.size,  PAGE_TYPE_SIZE + PAGENO_BYTES);
 	}
@@ -543,6 +544,7 @@ class IdPage {
             fs.open(filePath, 'r', (err, file)=> {
                 fs.read(file, page.data, 0, PAGE_SIZE, pageNo * PAGE_SIZE,
                     (err, data)=> {
+                		cache.set(pageNo, page);
 	                    page.__initPage();
                         resolve(page);
                     })
@@ -912,7 +914,7 @@ class IndexPage {
                         page.setPageNo(pageNo);
                         let offset = page.data.readInt16LE(1+4+2+4);
                         page.setOffset(offset);
-
+						cache.set(pageNo, page);
                         resolve(page);
                     })
             })
