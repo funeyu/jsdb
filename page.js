@@ -600,13 +600,13 @@ class IdPage {
 	}
 };
 
-const INDEXPAGE_HEADER_SIZE = 1 + 4 + 2 + 4 + 2;
+const INDEXPAGE_HEADER_SIZE = 1 + 4 + 2 + 4 + 2 + 4 + 4;
 const CELLDATA_BYTE_SIZE = 2;
 class IndexPage {
 	/*
 		the format of this kind page is :
 -------------------------------------------------------------------------
-		| type |  pageParent  |  size  |  pageNo  | offset |
+		| type |  pageParent  |  size  |  pageNo  | offset | prePageNo | nextPageNo
 				[offset1, offset2, offset3 ......]
 				......
 				[cell1, cell2, cell3......]
@@ -618,6 +618,8 @@ class IndexPage {
 			size:        2b  // the size of cell
 			pageNo:      4b  // this page number
 			offset:      2b  // where this page write from
+			prePageNo:   4b  // the pre page of this page (same level)
+			nextPageNo:  4b  // the next page of this page (same level)
 
 		offsets:
 			offset:      2b  // pointer of the cellData
@@ -671,12 +673,36 @@ class IndexPage {
 	    return this;
     }
 
+    setPrePageNo(prePageNo) {
+		this.prePageNo = prePageNo;
+		this.data.writeInt32LE(prePageNo, INDEXPAGE_HEADER_SIZE-8);
+		return this;
+	}
+
+	setNextPageNo(nextPageNo) {
+		this.nextPageNo = nextPageNo;
+		this.data.writeInt32LE(nextPageNo, INDEXPAGE_HEADER_SIZE-4);
+		return this;
+	}
+
+    getPrePageNo() {
+		return this.data.readInt32LE(INDEXPAGE_HEADER_SIZE-8);
+    }
+
+	getNextPageNo() {
+		return this.data.readInt32LE(INDEXPAGE_HEADER_SIZE-4);
+	}
+
+	hasRoomForBytes(bytesNum) {
+		let free = this.freeData();
+		return free >= bytesNum;
+	}
+
 	// true: this page has room for key, false: not 
 	hasRoomFor(key) {
-		let free = this.freeData(),
-			oneCellBytes = this.oneCellBytes(key);
+		let oneCellBytes = this.oneCellBytes(key);
 		// 需要的空间为一个cell的空间和一个offset指向；
-		return free >= (oneCellBytes + 2)
+		return this.hasRoomForBytes(oneCellBytes);
 	}	
 
 	setParentPage(pageNo) {
@@ -728,6 +754,23 @@ class IndexPage {
 		return this.type & PAGE_TYPE_LEAF;
 	}
 
+    /**
+	 * 每个cell的构成如：
+					 +-------------------+------> offset
+					 |    dataSize(2b)   |------> dataSize = size(key) + size(id) + size(childPageNo)
+					 +-------------------+
+					 |                   |
+					 |      key(nb)      |
+					 |                   |
+					 +-------------------+
+					 |      id(6b)       |
+					 +-------------------+
+					 |   childPageNo(4b) |
+					 +-------------------+
+     * @param offset
+     * @param index
+     * @returns {{key: String, id: {timeId: null, count: null}, childPageNo: Number}}
+     */
 	getCellByOffset(offset, index) {
 	    console.log('offset', offset, index);
 	    if(offset === 0) {
@@ -782,6 +825,83 @@ class IndexPage {
 	getCellInfoByIndex(index) {
 		let offset = this.__getOffsetByIndex(index);
 		return this.getCellByOffset(offset, index);
+	}
+
+	__rewritePage(cells) {
+		this.setSize(0);
+		this.setOffset(PAGE_SIZE);
+
+		for(let cell of cells) {
+			let {key, id, childPageNo} = cell;
+			this.insertCell(key, id, childPageNo);
+		}
+	}
+
+    /**
+	 * 判断没有key的情况下，该page是否是小于或者大于一半；
+	 * 由于key不是定长，而且page由一整page分裂成两半，
+	 * 所以这里判断是否大于一半，也是根据其和其相邻page能否被合并成一个page判断；
+	 * 如果能被合并成一个page页面，则返回true，否则返回false;
+	 *
+	 * 这里做相应的简化：
+	 * a: 最左的page和右侧的邻page匹配判断
+	 * b: 其他的page和左侧的邻page匹配判断
+     * @param key
+     */
+	async isLessHalfWithoutKey(key) {
+		let cellSize = this.oneCellBytes(key);
+		let adjacentPage,
+			adjacentPageNo,
+			adjacentCellsBytes, needBytes;
+		if(this.isLeftMost()) {
+			adjacentPageNo = this.getNextPageNo();
+		} else {
+            adjacentPageNo = this.getPrePageNo();
+		}
+        adjacentPage = await IndexPage.LoadPage(adjacentPageNo);
+        adjacentCellsBytes = adjacentPage.cellsBytes();
+        // todo: adjacentCellsBytes小于cellSize
+		needBytes = adjacentCellsBytes - cellSize;
+
+        return this.hasRoomForBytes(needBytes);
+	}
+
+    deleteCellByIndex(index) {
+		let filtered = [];
+		for(let i = 0; i < this.size; i ++) {
+			if(i !== index) {
+				filtered.push(this.getCellInfoByIndex(i));
+			}
+		}
+		this.__rewritePage(filtered);
+    }
+
+    updateCellInfo(cellInfo, index) {
+		let filtered = [];
+		for(let i = 0; i < this.size; i ++) {
+			if(i===index) {
+				filtered.push(cellInfo);
+			} else {
+				filtered.push(this.getCellInfoByIndex(i));
+			}
+		}
+
+		this.__rewritePage(filtered);
+    }
+
+    // 返回该page的offset区域和celldata区域总bytes
+    cellsBytes() {
+        return this.size * OFFSET_BYTES_SIZE + (PAGE_SIZE - this.offset);
+    }
+
+    // 判断该page是否为最左边
+    isLeftMost() {
+		return !this.getPrePageNo();
+	}
+
+	// 判断该page是否为最右边
+	isRightMost() {
+		return !this.getNextPageNo();
 	}
 
     // 找到最左的和key一样大小的cellInfo

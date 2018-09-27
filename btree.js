@@ -486,6 +486,47 @@ class IndexBtree {
         this.btreeMeta.updateIndexRootPage(rootPageNo);
     }
 
+    /**
+	 * 删除策略：
+	 * a: 删除的page为left-most,和其next-page匹配平衡
+	 * 	  a1:在删除项的cellIndex=0时，要先更新其parentPage的cellInfo
+	 * b: 删除的page为between，则和其pre-page匹配平衡
+     * @param page
+     * @param cellInfo
+     * @returns {Promise.<void>}
+     * @private
+     */
+    async __deleteRec(page, cellInfo) {
+    	if(page.isRoot()) {
+    		return;
+		}
+		if(page.isLeftMost()) {
+    		// a1：
+			if(cellInfo.cellIndex === 0) {
+				let parentPage = await this.getRootPage();
+				// 这里是假定必有大于一个的索引项
+				let thisCellInfo = page.getCellInfoByIndex(0);
+				let nextCellInfo = page.getCellInfoByIndex(1);
+				thisCellInfo.key = nextCellInfo.key;
+
+				parentPage.updateCellInfo(thisCellInfo, 0);
+			}
+
+		}
+	}
+
+    async deleteKey(key, id) {
+        let deepestPage = await this.walkDeepest(key);
+        let cellInfo = deepestPage.findNearestCellInfo(key);
+    	if(!cellInfo) {
+    		return ;
+		}
+
+		if(IdCompare(id, cellInfo.id) === 0) {
+    		await this.__deleteRec(deepestPage, cellInfo);
+		}
+	}
+
     async insertKey(key, id) {
         let deepestPage = await this.walkDeepest(key);
 
@@ -503,9 +544,9 @@ class IndexBtree {
     async findId(key) {
     	let deepestPage = await this.walkDeepest(key);
     	let cellInfo = deepestPage.findNearestCellInfo(key);
-    	if(cellInfo && compare(cellInfo.key, key) === 0) {
-    		return cellInfo.id;
-	    }
+    	if(cellInfo) {
+    		return cellInfo.id
+		}
 
         // let startPage = this.rootPage;
         // let cellInfo = startPage.__findNearestCellInfo(key);
@@ -564,6 +605,11 @@ class IndexBtree {
                 startPage.setParentPage(rootPageNo);
 				let splitPage = new IndexPage(pageType, rootPageNo,
 						splitPageNo);
+
+				// 将同一level的节点链接起来，形成双向链表，用来range查询
+				startPage.setNextPageNo(splitPage.getPageNo());
+				splitPage.setPrePageNo(startPage.getPageNo());
+
                 let rootNewPage = new IndexPage(
                 	(PAGE_TYPE_INDEX | PAGE_TYPE_ROOT), null, rootPageNo);
 
@@ -600,6 +646,11 @@ class IndexBtree {
                 let splitParentNo = await this.rebalance(parentPage, middleCellInfo);
                 let splitPage = new IndexPage(pageType, splitParentNo,
 	                    splitPageNo);
+
+                // 将splitPage和startPage组成双向链表
+				splitPage.setPrePageNo(startPage.getPageNo());
+				startPage.setNextPageNo(splitPage.getPageNo());
+
                 for(let i = 0; i < splices.length; i ++) {
                 	let s = splices[i];
                     splitPage.insertCell(s.key, s.id, s.childPageNo);

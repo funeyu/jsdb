@@ -1,4 +1,5 @@
 const {IdBtree, IndexBtree, BtreeMeta} = require('./btree.js');
+const {IndexPage, PAGE_TYPE_INDEX, PAGE_TYPE_ROOT}  = require('./page.js');
 const {IdGen} = require('./utils');
 // let idBtree = new IdBtree();
 // let id;
@@ -59,22 +60,30 @@ const {IdGen} = require('./utils');
 //     	console.log('cellInfo', cellInfo)
 //     });
 // })
-const indexBtree = new IndexBtree(new BtreeMeta(Buffer.alloc(1024))
-        , 'name', 1);
-let ids = [];
-for(var i = 0; i < 1300; i ++) {
-    ids.push(IdGen());
+// const indexBtree = new IndexBtree(new BtreeMeta(Buffer.alloc(1024))
+//         , 'name', 1);
+// let ids = [];
+// for(var i = 0; i < 1300; i ++) {
+//     ids.push(IdGen());
+// }
+// let test = async function() {
+//     for(var i = 0; i < 1200; i ++) {
+//         if(i === 345) {
+//             await indexBtree.insertKey('fuheyu' + i, ids[i]);
+//         } else {
+//             await indexBtree.insertKey('fuheyu'+ i, ids[i]);
+//         }
+//     }
+//     let r = await indexBtree.rootPage.findId('fuheyu700');
+//     console.log('r',  r);
+//     console.log('result', ids[700])
+// };
+// test();
+
+
+let indexPage = new IndexPage(PAGE_TYPE_INDEX | PAGE_TYPE_ROOT, -1, 1);
+for(var i = 0; i < 4; i ++) {
+    indexPage.insertCell('java' + i, IdGen(), 1);
 }
-let test = async function() {
-    for(var i = 0; i < 1200; i ++) {
-        if(i === 345) {
-            await indexBtree.insertKey('fuheyu' + i, ids[i]);
-        } else {
-            await indexBtree.insertKey('fuheyu'+ i, ids[i]);
-        }
-    }
-    let r = await indexBtree.rootPage.findId('fuheyu700');
-    console.log('r',  r);
-    console.log('result', ids[700])
-};
-test();
+console.log('cellBytes', indexPage.cellsBytes());
+console.log('freeRoom', indexPage.freeData())
