@@ -632,8 +632,8 @@ class IndexPage {
 			id:          6b  // the key pair <key, id>
 			childPageNo: 4b  // cell pointers for its child page
 	*/
-	constructor(type, pageParent, pageNo) {
-		this.data = Buffer.alloc(PAGE_SIZE);
+	constructor(type, pageParent, pageNo, bufferData) {
+		this.data = bufferData ? bufferData : Buffer.alloc(PAGE_SIZE);
 		if(!pageParent && !pageNo && !type) {
 		    return;
         }
@@ -960,6 +960,7 @@ class IndexPage {
 	}
 
     // 找到最左的和key一样大小的cellInfo
+	// todo 跨page查找
 	__theLeftMostEqual(start, key) {
 		let cellInfo = this.getCellInfoByIndex(start);
 		while(compare(key, cellInfo['key']) === 0) {
@@ -973,19 +974,38 @@ class IndexPage {
 		return {... this.getCellInfoByIndex(start + 1), cellIndex: start + 1};
 	}
 
+	// 找到最右和key一样大小的cellInfo
+	// todo 跨page查找
+	__theRightMostEqual(start, key) {
+		let cellInfo = this.getCellInfoByIndex(start);
+		while(compare(key, cellInfo['key']) === 0) {
+			if(start === this.size - 1) {
+				return {... cellInfo, cellIndex: this.size - 1}
+			}
+			start ++;
+			cellInfo = this.getCellInfoByIndex(start);
+		}
+
+		return {... this.getCellInfoByIndex(start - 1), cellIndex: start - 1};
+	}
+
     /**
-     * 获取左侧最接近的cell；
+     * isRightMost为false时，获取左侧最接近的cell；
      * 如 cells如下： (key1 < key2 < key3 < ...)
      * ---------------------------------------------------------------------
      * [key1, id1], [key1, id2], [key2, id3], [key2, id4], [key3, id4]......
      * ---------------------------------------------------------------------
-     * 如果__findNearestCellInfo(key1)则返回的为id1;
+     * 如 __findNearestCellInfo(key1)则返回的为id1;
      *    __findNearestCellInfo(key2) 返回的为id3;
-     * @param key
+	 *
+	 * isRight为true时， 返回右侧最接近的cell
+	 * 	  __findNearestCellInfo(key1, true) 返回为id2
+	 * 	  __findNearestCellInfo(key2, true) 返回为id4
+     * @param key, isRightMost 为true的时候
      * @returns {*}
      * @private
      */
-    findNearestCellInfo(key) {
+    findNearestCellInfo(key, isRightMost) {
 		if(this.size === 0) {
 			return;
 		}
@@ -1023,7 +1043,8 @@ class IndexPage {
 			if(compare(middleCellInfo.key, key) > 0) {
 				maxIndex = middle;
 			} else if(compare(middleCellInfo.key, key) === 0) {
-				return this.__theLeftMostEqual(middle, key);
+				return isRightMost ? this.__theRightMostEqual(middle, key)
+					               :this.__theLeftMostEqual(middle, key);
 			} else {
 				let middleNext = middle + 1;
 				let middleNextCellInfo = this.getCellInfoByIndex(middleNext);
@@ -1087,7 +1108,7 @@ class IndexPage {
 
 	static LoadPage(pageNoN) {
 		return this.__loadRawPage(pageNoN, (dataBuffer)=> {
-			let page = new IndexPage();
+			let page = new IndexPage(null, null, null, dataBuffer);
             let type = dataBuffer.readInt8(0);
             page.setType(type);
             let pageParent = dataBuffer.readInt32LE(1);
@@ -1098,10 +1119,10 @@ class IndexPage {
             page.setPageNo(pageNo);
             let offset = dataBuffer.readInt16LE(1+4+2+4);
             page.setOffset(offset);
-            let nextPageNo = dataBuffer.readInt32LE(INDEXPAGE_HEADER_SIZE - 8);
-            page.setNextPageNo(nextPageNo);
-            let prePageNo = dataBuffer.readInt32LE(INDEXPAGE_HEADER_SIZE - 4);
+            let prePageNo = dataBuffer.readInt32LE(INDEXPAGE_HEADER_SIZE - 8);
             page.setPrePageNo(prePageNo);
+            let nextPageNo = dataBuffer.readInt32LE(INDEXPAGE_HEADER_SIZE - 4);
+            page.setNextPageNo(nextPageNo);
             cache.set(pageNo, page);
             return page;
 		});

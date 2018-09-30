@@ -120,6 +120,49 @@ class jsDB {
         return result;
     }
 
+    /**
+     * 返回一个范围内的数据
+     * @param keyName
+     * @param option
+     * @returns {Promise.<void>}
+     */
+    // todo 校验option，处理其他情况
+    async range(keyName, option) {
+        let indexBtree = this.keysMap[keyName];
+        let {lt, gt} = option;
+
+        let ltRangeInfo = await indexBtree.rangePage(lt);
+        let gtRangeInfo = await indexBtree.rangePage(gt, true);
+
+        let cells = [];
+        let startPage = ltRangeInfo.page;
+        let endPage = gtRangeInfo.page;
+        if(startPage.getPageNo() === endPage.getPageNo()) {
+            for(let i = ltRangeInfo.cellIndex; i <= gtRangeInfo.cellIndex; i ++) {
+                cells.push(startPage.getCellInfoByIndex(i));
+            }
+            console.log('cells.length', cells.length);
+            return Promise.resolve(cells);
+        }
+
+        for(let i = ltRangeInfo.cellIndex; i < startPage.getSize(); i ++) {
+            cells.push(startPage.getCellInfoByIndex(i));
+        }
+        startPage = await startPage.getNextPage();
+        while(startPage.getPageNo() !== endPage.getPageNo()) {
+            cells = cells.concat(startPage.allCells());
+            startPage = await startPage.getNextPage();
+        }
+
+        for(let i=0; i < gtRangeInfo.cellIndex; i ++) {
+            cells.push(endPage.getCellInfoByIndex(i));
+        }
+
+        console.log('ltRangeInfo, gtRangeInfo', ltRangeInfo, gtRangeInfo);
+        console.log('cells.length:', cells.length);
+
+    }
+
     async flush() {
         // 先写page0 也即是btreeMeta的data
         await IndexPage.FlushPageToDisk(this.directory, this.btreeMeta.data, 0);
@@ -160,15 +203,8 @@ class jsDB {
 
 async function test() {
     let db = await new jsDB('js', null, 'name');
-    for(let i = 0; i < 5000; i ++) {
+    for(let i = 0; i < 50000; i ++) {
         let id = await db.put({name: 'funer80900090009' + i, className: 'super' + i});
-    }
-    for(let i =0; i < 5000; i ++ ) {
-        let result = await db.findByKey('name', 'funer80900090009' + i);
-        console.log('conecctttttttt', result);
-        if(!result) {
-            throw new Error('error!')
-        }
     }
 
     await db.flush();
@@ -176,13 +212,15 @@ async function test() {
 
 async function connect() {
     let db = await jsDB.Connect('js');
-    for(let i =0; i < 500; i ++ ) {
-        let result = await db.findByKey('name', 'funer80900090009' + i);
-        console.log('conecctttttttt', result);
-        if(!result) {
-            throw new Error('error!')
-        }
-    }
+    // for(let i =0; i < 5000; i ++ ) {
+    //     let result = await db.findByKey('name', 'funer80900090009' + i);
+    //     console.log('conecctttttttt', result);
+    //     if(!result) {
+    //         throw new Error('error!')
+    //     }
+    // }
+
+    db.range('name', {lt: 'funer809000900091', gt: 'funer809000900091'});
 }
 // test();
 connect();

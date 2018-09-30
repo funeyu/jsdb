@@ -646,6 +646,16 @@ class IndexBtree {
         await this.rebalance(deepestPage, {key, id, childPageNo: 0});
     }
 
+    async rangePage(key, isRightMost) {
+    	let deepestPage = await this.walkDeepest(key);
+    	let cellInfo = deepestPage.findNearestCellInfo(key, isRightMost);
+
+    	return {
+			... cellInfo,
+			page: deepestPage
+		}
+	}
+
     // 根据key查找一个idInfo
     async findId(key) {
     	let deepestPage = await this.walkDeepest(key);
@@ -754,6 +764,12 @@ class IndexBtree {
                 splitPage.setParentPage(splitParentNo);
 
                 // 将splitPage和startPage组成双向链表
+                let nextPageNo = startPage.getNextPageNo();
+                if(nextPageNo) {
+                    let nextPage = await startPage.getNextPage();
+                    splitPage.setNextPageNo(nextPageNo);
+                    nextPage.setPrePageNo(splitPage.getPageNo());
+                }
 				splitPage.setPrePageNo(startPage.getPageNo());
 				startPage.setNextPageNo(splitPage.getPageNo());
 
