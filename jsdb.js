@@ -160,35 +160,29 @@ class jsDB {
 
 async function test() {
     let db = await new jsDB('js', null, 'name');
-    for(let i = 0; i < 50000; i ++) {
+    for(let i = 0; i < 5000; i ++) {
         let id = await db.put({name: 'funer80900090009' + i, className: 'super' + i});
-        // await db.put({name: 'nameSex' + i, className: 'superrman' + i});
+    }
+    for(let i =0; i < 5000; i ++ ) {
+        let result = await db.findByKey('name', 'funer80900090009' + i);
+        console.log('conecctttttttt', result);
+        if(!result) {
+            throw new Error('error!')
+        }
     }
 
-    let result = await db.findByKey('name', 'funer8090009000999');
-    console.log('result', result);
-
-    let id = await db.put({name: 'namessss2', className: 'superman'});
     await db.flush();
-    // let result = await db.findByKey('name', 'name9');
-    // console.log('result', result)
 }
 
 async function connect() {
     let db = await jsDB.Connect('js');
-    let id = await db.put({name: 'namessss', className: 'superman'});
-    // await db.flush();
-
-    let result = await db.findByKey('name', 'namessss');
-    console.log(result);
-    // await db.flush();
-    // for(let i =30000; i < 40000; i ++ ) {
-    //     let result = await db.findByKey('name', 'funer80900090009' + i);
-    //     console.log('conecctttttttt', result);
-    //     if(!result) {
-    //         throw new Error('error!')
-    //     }
-    // }
+    for(let i =0; i < 500; i ++ ) {
+        let result = await db.findByKey('name', 'funer80900090009' + i);
+        console.log('conecctttttttt', result);
+        if(!result) {
+            throw new Error('error!')
+        }
+    }
 }
 // test();
 connect();
