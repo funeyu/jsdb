@@ -141,8 +141,19 @@ class jsDB {
             for(let i = ltRangeInfo.cellIndex; i <= gtRangeInfo.cellIndex; i ++) {
                 cells.push(startPage.getCellInfoByIndex(i));
             }
-            console.log('cells.length', cells.length);
-            return Promise.resolve(cells);
+            return Promise.resolve({
+                cells,
+                total: ()=> cells.length,
+                fetch: async ()=> {
+                    let results = [];
+                    for(let i = 0; i < cells.length; i ++) {
+                        let result = await this.findById(cells[i].id);
+                        results.push(result)
+                    }
+
+                    return results;
+                }
+            });
         }
 
         for(let i = ltRangeInfo.cellIndex; i < startPage.getSize(); i ++) {
@@ -158,8 +169,19 @@ class jsDB {
             cells.push(endPage.getCellInfoByIndex(i));
         }
 
-        console.log('ltRangeInfo, gtRangeInfo', ltRangeInfo, gtRangeInfo);
-        console.log('cells.length:', cells.length);
+        return Promise.resolve({
+            cells,
+            total: ()=> cells.length,
+            fetch: async ()=> {
+                let results = [];
+                for(let i = 0; i < cells.length; i ++) {
+                    let result = await this.findById(cells[i].id);
+                    results.push(result);
+                }
+
+                return results;
+            }
+        });
 
     }
 
@@ -212,7 +234,7 @@ async function test() {
 
 async function connect() {
     let db = await jsDB.Connect('js');
-    // for(let i =0; i < 5000; i ++ ) {
+    // for(let i =0; i < 50000; i ++ ) {
     //     let result = await db.findByKey('name', 'funer80900090009' + i);
     //     console.log('conecctttttttt', result);
     //     if(!result) {
@@ -220,7 +242,13 @@ async function connect() {
     //     }
     // }
 
-    db.range('name', {lt: 'funer809000900091', gt: 'funer809000900091'});
+    db.range('name', {lt: 'funer809000900091', gt: 'funer8090009000910001'}).then(data=> {
+        console.log('count', data.total());
+        console.log('ids', data.cells);
+        data.fetch().then(details=> {
+            console.log('details', details);
+        })
+    });
 }
 // test();
 connect();
