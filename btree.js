@@ -13,17 +13,32 @@ const {DataPage, IdPage, IndexPage,
 const {MIN_KEY, MIN_ID} = require('./constants');
 const {compare, IdGen, IdCompare, hash, ByteSize} = require('./utils.js');
 
-
+const REUSE_LIST_BYTES = 8;
 const ID_BTREE_META_BYTES = 8;
-const ID_BTREE_META_HEADER = 8 + 4 + 1 + 1 + 2;
+const ID_BTREE_META_HEADER = 8 + 8 + 4 + 1 + 1 + 2;
 const PAGE_NO_BYTES = 4;
 /*
 * Btree tree的元信息， 占据索引文件的第一个page, 用户索引的key大小不能大于32b
 * 其结构为：
-*  ---------------------------------------------------------------------------
-*             idBtreeMeta | maxPageNo| btreeSize | slotSize | offset
+*  -----------------------------------ID_BTREE_META_HEADER--------------------
+*          reuseList | idBtreeMeta | maxPageNo| btreeSize | slotSize | offset
 *         [ offset1, offset2, ] ...... [ meta1, meta2, ]
 *  ---------------------------------------------------------------------------
+*
+*  reuseList(索引页随着删除引起的合并操作，使得某些page被置空可被再次回收使用) 的数据结构:
+*  	first(4b)+last(4b)
+*  	每添加一个reusePage修改first, 修改first的next指向：
+*  	如：
+*  	   first             last
+		 +                +
+		 v                v
+		15+-->13+-->28+-->87
+	新增一个reusePage(26)其结构变为：
+		first                  last
+		 +                      +
+		 v                      v
+		26+-->15+-->13+-->28+-->87
+
 *  idBreeMeta(8b)的数据结构：
 *    rootPageNo(4b)+workingPageNo(4b)
 *  maxPageNo(4b):
@@ -43,15 +58,22 @@ class BtreeMeta {
 	// 直接传递一块page大小buffer，包含所有的BtreeMeta
 	constructor(pageBuffer) {
 		this.data = pageBuffer;
+		let reuseListFirst = pageBuffer.readInt32LE(0);
+		let reuseListLast = pageBuffer.readInt32LE(4);
 
-		let idBtreeMetaRootPageNo = pageBuffer.readInt32LE(0);
-		let idBtreeMetaWorkingPageNo = pageBuffer.readInt32LE(4);
+		this.reuseList = {
+			first: reuseListFirst,
+			last: reuseListLast
+		};
+
+		let idBtreeMetaRootPageNo = pageBuffer.readInt32LE(REUSE_LIST_BYTES);
+		let idBtreeMetaWorkingPageNo = pageBuffer.readInt32LE(REUSE_LIST_BYTES+4);
 		this.idBtreeMeta = {
 			rootPageNo: idBtreeMetaRootPageNo,
 			workingPageNo: idBtreeMetaWorkingPageNo,
 		};
-		this.maxPageNo = pageBuffer.readInt32LE(ID_BTREE_META_BYTES);
-		this.btreeSize = pageBuffer.readInt8(ID_BTREE_META_BYTES
+		this.maxPageNo = pageBuffer.readInt32LE(REUSE_LIST_BYTES + ID_BTREE_META_BYTES);
+		this.btreeSize = pageBuffer.readInt8(REUSE_LIST_BYTES + ID_BTREE_META_BYTES
 				+ PAGE_NO_BYTES);
 		this.slotSize = pageBuffer.readInt8(ID_BTREE_META_HEADER -3);
 		if(!this.slotSize) {
@@ -85,6 +107,56 @@ class BtreeMeta {
                     });
             })
         });
+	}
+
+	addReuseList(pageNo) {
+		let {first, last} = this.reuseList;
+		if(!first) {
+			first = last = pageNo;
+			this.reuseList = {
+				first,
+				last
+			};
+			this.data.writeInt32LE(first, 0);
+			this.data.writeInt32LE(last, 4);
+		} else {
+			first = pageNo;
+			this.reuseList.first = first;
+			this.data.writeInt32LE(first, 0);
+		}
+	}
+
+	getReuseListFirst() {
+		let {first} = this.reuseList;
+		return first;
+	}
+
+	updateReuseList(first, last) {
+		this.reuseList = {
+            first,
+            last
+        };
+
+		this.data.writeInt32LE(first, 0);
+		this.data.writeInt32LE(last, 4);
+	}
+
+	async fetchReuse() {
+		let {first, last} = this.reuseList;
+		if(first === last) {
+			// reuseList置空
+			this.updateReuseList(0, 0);
+			if(first === 0) {
+				return Promise.resolve(false);
+			}
+			return IndexPage.LoadAsReuse(first);
+		}
+
+		let reusePage = await IndexPage.LoadAsReuse(first);
+		this.reuseList.first = first = reusePage.reUseNext();
+		this.updateReuseList(first, last);
+
+		return reusePage;
 	}
 
 	// 返回所有的key
@@ -121,13 +193,13 @@ class BtreeMeta {
 
 	setBtreeSize(size) {
 		this.btreeSize = size;
-		this.data.writeInt8(size, ID_BTREE_META_BYTES + PAGE_NO_BYTES);
+		this.data.writeInt8(size, REUSE_LIST_BYTES + ID_BTREE_META_BYTES + PAGE_NO_BYTES);
 		return this;
 	}
 
 	setMaxPageNo(pageNo) {
 		this.maxPageNo = pageNo;
-		this.data.writeInt32LE(pageNo, ID_BTREE_META_BYTES);
+		this.data.writeInt32LE(pageNo, REUSE_LIST_BYTES + ID_BTREE_META_BYTES);
 		return this;
 	}
 
@@ -139,14 +211,19 @@ class BtreeMeta {
 
 	setIdBtreeMeta(idBtreeMeta) {
 		this.idBtreeMeta = idBtreeMeta;
-		this.data.writeInt32LE(idBtreeMeta.rootPageNo, 0);
-		this.data.writeInt32LE(idBtreeMeta.workingPageNo, 4);
+		this.data.writeInt32LE(idBtreeMeta.rootPageNo, REUSE_LIST_BYTES);
+		this.data.writeInt32LE(idBtreeMeta.workingPageNo, REUSE_LIST_BYTES + 4);
 		return this;
 	}
 
 	setIdBtreeWorkingPage(pageNo) {
 		this.idBtreeMeta.workingPageNo = pageNo;
-		this.data.writeInt32LE(pageNo, 4);
+		this.data.writeInt32LE(pageNo, REUSE_LIST_BYTES + 4);
+	}
+
+	setRootPageNo(pageNo) {
+		this.idBtreeMeta.rootPageNo = pageNo;
+		this.data.writeInt32LE(pageNo, REUSE_LIST_BYTES);
 	}
 	getMaxPageNo() {
 		return this.maxPageNo;
@@ -205,7 +282,7 @@ class BtreeMeta {
 		// 先粗暴的将所有的key先收集起来, 再重新添加
 		let keys = this.allKeys();
 
-		this.btreeSize = 0;
+		this.setBtreeSize(0);
 		this.offset = PAGE_SIZE;
 		keys.forEach(k=> {
 			this.addIndexRootPage(k.key, k.rootPageNo);
@@ -253,9 +330,7 @@ class BtreeMeta {
 		this.data.writeInt16LE(nextOffset, start - 6);
 		this.data.writeInt8(keySize, start - 7);
 		this.data.write(key, start - oneIndexMetaSize);
-		this.btreeSize ++;
-		this.data.writeInt8(this.btreeSize,
-				ID_BTREE_META_BYTES + PAGE_NO_BYTES);
+		this.setBtreeSize(this.btreeSize + 1);
 		this.offset -= (7 + keySize);
 		this.data.writeInt16LE(this.offset, ID_BTREE_META_HEADER - 2);
 	}
@@ -301,7 +376,7 @@ class BtreeMeta {
 		if(!metaInfo) {
 			throw new Error(`BtreeMeta cannot update key(${key}) not exists!`);
 		}
-		this.__changeRootPageNo(metaInfo.offset, metaInfo.rootPageNo);
+		this.__changeRootPageNo(metaInfo.offset, rootPageNo);
 	}
 	//=======================================================================
 }
@@ -379,42 +454,43 @@ class IdBtree {
 				pageType = pageType | PAGE_TYPE_INTERNAL
 			}
 			if(page.isRoot()) {
-				maxPageNo ++;
+				page.setType(pageType);
+				maxPageNo = this.btreeMeta.increaseMaxPageNo();
 				let idRootPage = new IdPage(PAGE_TYPE_ID|PAGE_TYPE_ROOT, -1,
 						maxPageNo);
+                page.setPageParent(maxPageNo, true);
 				this.rootPage = idRootPage;
+                // 记录idBtree的rootPage
+                this.btreeMeta.setRootPageNo(maxPageNo);
+
 				let minIdInfo = page.getMinIdInfo();
 				idRootPage.insertCell(minIdInfo.id, page.getPageNo());
-				maxPageNo++;
+
+				maxPageNo=this.btreeMeta.increaseMaxPageNo();
 				let nextPage = new IdPage(pageType, idRootPage.getPageNo(),
 						maxPageNo);
                 idRootPage.insertCell(id, maxPageNo);
 				page.setNextPage(maxPageNo, true);
                 nextPage.insertCell(id, childPageNo);
 				nextPage.setPrePage(page.getPageNo(), true);
-				// 如果是叶节点,则需要记录workingPage
-				if(page.isLeaf()) {
-					// maxPageNo为nextPage的页码
-					this.btreeMeta.setIdBtreeWorkingPage(maxPageNo);
-					this.workingPage = nextPage;
-				}
-				this.btreeMeta.setMaxPageNo(maxPageNo);
 
 				return nextPage.getPageNo();
 			} else {
-				maxPageNo ++;
+				maxPageNo = this.btreeMeta.increaseMaxPageNo();
 				let parentPage = await IdPage.Load(page.getPageParent());
 				let pageNo = await this.insertRecursily(parentPage, {
 					id: id,
 					childPageNo: maxPageNo
 				});
 				let nextPage = new IdPage(pageType, pageNo, maxPageNo);
+                // 如果是叶节点,则需要记录workingPage
                 if(page.isLeaf()) {
-					this.btreeMeta.setIdBtreeWorkingPage(maxPageNo);
-					this.workingPage = nextPage;
+                    // maxPageNo为nextPage的页码
+                    this.btreeMeta.setIdBtreeWorkingPage(maxPageNo);
+                    this.workingPage = nextPage;
                 }
-                page.setNextPage(maxPageNo);
-                nextPage.setPrePage(page.getPageNo());
+                page.setNextPage(maxPageNo, true);
+                nextPage.setPrePage(page.getPageNo(), true);
 				nextPage.insertCell(id, childPageNo);
 				return nextPage.getPageNo();
 			}
@@ -434,7 +510,7 @@ class IdBtree {
 		return
 	}
 
-	// 查找DataPage的pageNo
+	// 根据id查找DataPage的pageNo
 	async findPageNo(idInfo) {
 		let leafPage = await this.__diveIntoLeaf(idInfo);
 		if(!leafPage) {
@@ -480,6 +556,83 @@ class IndexBtree {
         this.btreeMeta.updateIndexRootPage(rootPageNo);
     }
 
+    /**
+	 * 删除策略：
+	 * a: 删除的page为left-most,和其next-page匹配平衡
+	 * b:在删除项的cellIndex=0时，要先更新其parentPage的cellInfo
+	 * c: 删除的page为between，则和其pre-page匹配平衡
+     * @param page
+     * @param cellInfo
+     * @returns {Promise.<void>}
+     * @private
+     */
+    async __deleteRec(page, cellInfo) {
+    	if(page.isRoot()) {
+    		return;
+		}
+		let adjacentPage;
+    	let isLeftMost = page.isLeftMost();
+
+		if(isLeftMost) {
+            adjacentPage = await page.getNextPage();
+		} else {
+			adjacentPage = await page.getPrePage();
+		}
+        // b：
+        if(cellInfo.cellIndex === 0) {
+            let parentPage = await this.getRootPage();
+            // 这里是假定必有大于一个的索引项
+            let thisCellInfo = page.getCellInfoByIndex(0);
+            let nextCellInfo = page.getCellInfoByIndex(1);
+            thisCellInfo.key = nextCellInfo.key;
+
+            parentPage.updateCellInfo(thisCellInfo, 0);
+        }
+        // 可以合并相邻page
+        if(page.isLessHalfWithoutKey(cellInfo.key)) {
+            let adjacentPageCells = adjacentPage.allCells();
+            page.batchInsertCells(adjacentPageCells);
+
+            // 将空Page标记为可reuse
+			let reusePage, appendPage;
+			if(isLeftMost) {
+                reusePage = adjacentPage;
+                appendPage = page;
+			} else {
+                reusePage = page;
+                appendPage = await page.getPrePage();
+			}
+			let reuseListFirst = this.btreeMeta.getReuseListFirst();
+            reusePage.transformToReuse(reuseListFirst);
+
+            this.btreeMeta.addReuseList(reusePage.getPageNo());
+            // the cells need to be appended to the appendPage
+            let reusePageCells = reusePage.allCells();
+			appendPage.batchInsertCells(reusePageCells);
+
+            // 删除nextPage父page的nextPage信息
+            let parent = await reusePage.getPageParent();
+            let {key, id} = reusePageCells[0];
+            let pendingDeleteCell = parent.findCorrectCellInfo(key, id);
+            await this.__deleteRec(parent, pendingDeleteCell);
+        } else {
+            page.deleteCellByIndex(cellInfo.cellIndex);
+        }
+
+	}
+
+    async deleteKey(key, id) {
+        let deepestPage = await this.walkDeepest(key);
+        let cellInfo = deepestPage.findCorrectCellInfo(key, id);
+    	if(!cellInfo) {
+    		return ;
+		}
+
+		if(IdCompare(id, cellInfo.id) === 0) {
+    		await this.__deleteRec(deepestPage, cellInfo);
+		}
+	}
+
     async insertKey(key, id) {
         let deepestPage = await this.walkDeepest(key);
 
@@ -493,34 +646,57 @@ class IndexBtree {
         await this.rebalance(deepestPage, {key, id, childPageNo: 0});
     }
 
+    async rangePage(key, isRightMost) {
+    	let deepestPage = await this.walkDeepest(key);
+    	let cellInfo = deepestPage.findNearestCellInfo(key, isRightMost);
+
+    	return {
+			... cellInfo,
+			page: deepestPage
+		}
+	}
+
+    // 根据key查找一个idInfo
     async findId(key) {
-    	let startPage = this.rootPage;
-        let cellInfo = startPage.__findNearestCellInfo(key);
+    	let deepestPage = await this.walkDeepest(key);
+    	let cellInfo = deepestPage.findNearestCellInfo(key);
         if(cellInfo && compare(cellInfo.key, key) === 0) {
-            return cellInfo.id
+            return cellInfo.id;
         }
-        console.log('cellInfo+++++++++++++++++++++++++++++++', cellInfo);
-        while(cellInfo.childPageNo > 0) {
-            let childPage = await IndexPage.LoadPage(cellInfo.childPageNo);
-            cellInfo = childPage.__findNearestCellInfo(key);
-            if(cellInfo && compare(cellInfo.key, key) === 0) {
-                return cellInfo.id
-            }
-        }
+
+        // let startPage = this.rootPage;
+        // let cellInfo = startPage.__findNearestCellInfo(key);
+        // if(cellInfo && compare(cellInfo.key, key) === 0) {
+        //     return cellInfo.id
+        // }
+        //
+        // while(cellInfo.childPageNo > 0) {
+        //     let childPage = await IndexPage.LoadPage(cellInfo.childPageNo);
+        //     cellInfo = childPage.__findNearestCellInfo(key);
+        //     if(cellInfo && compare(cellInfo.key, key) === 0) {
+        //         return cellInfo.id
+        //     }
+        // }
     }
 
+    // 根据key查找多个idInfo
+    async findIds(key) {
+		let deepestPage = await this.walkDeepest(key);
+		// 带有cellIndex的cellInfo
+		let cellInfos = deepestPage.collectAllEqualIds(key);
+		// todo 处理跨页面相等key的情况
+		return cellInfos.map(cell=> cell.id);
+
+    }
     async walkDeepest(key) {
         let startPage = this.rootPage;
         while(!(startPage.getType() & PAGE_TYPE_LEAF)){
-            startPage = await startPage.getChildPage(key);
+            startPage = await startPage.getNearestChildPage(key);
         }
         return startPage;
     }
 
     async rebalance(startPage, indexInfo) {
-    	if(startPage.getPageNo() === 0) {
-    		console.log('dddd')
-	    }
         if(startPage.hasRoomFor(indexInfo.key)) {
             startPage.insertCell(
                 indexInfo.key,
@@ -530,10 +706,7 @@ class IndexBtree {
             return startPage.getPageNo();
         } else {
             let splices = startPage.half(indexInfo);
-            let middleCellInfo = splices.shift();
-            if(!middleCellInfo) {
-            	console.log('ddd')
-            }
+            let middleCellInfo = Object.assign({}, splices[0]);
             let pageType = PAGE_TYPE_INDEX;
             if(startPage.isLeaf()) {
                 pageType |= PAGE_TYPE_LEAF;
@@ -548,13 +721,26 @@ class IndexBtree {
                 startPage.setParentPage(rootPageNo);
 				let splitPage = new IndexPage(pageType, rootPageNo,
 						splitPageNo);
+
+				// 将同一level的节点链接起来，形成双向链表，用来range查询
+				startPage.setNextPageNo(splitPage.getPageNo());
+				splitPage.setPrePageNo(startPage.getPageNo());
+
                 let rootNewPage = new IndexPage(
                 	(PAGE_TYPE_INDEX | PAGE_TYPE_ROOT), null, rootPageNo);
 
-                splices.forEach(s=> {
-                    splitPage.insertCell(s.key, s.id, s.childPageNo);
-                });
-
+                for(let i = 0; i < splices.length; i ++) {
+                	let s = splices[i];
+                	splitPage.insertCell(s.key, s.id, s.childPageNo);
+                }
+				if(!startPage.isLeaf()) {
+                	for(let i = 0; i < splices.length; i++) {
+                		let s = splices[i];
+                        // 同时修改childPage的parentPage
+                        let childPage = await IndexPage.LoadPage(s.childPageNo);
+                        childPage.setParentPage(splitPageNo);
+	                }
+				}
                 rootNewPage.insertCell(MIN_KEY, MIN_ID, startPage.getPageNo());
                 middleCellInfo.childPageNo = splitPageNo;
                 rootNewPage.insertCell(
@@ -565,21 +751,42 @@ class IndexBtree {
                 this.rootPage = rootNewPage;
                 this.btreeMeta.updateIndexRootPage(rootNewPage.getPageNo(),
 	                    this.key);
-                if(IdCompare(indexInfo.key, middleCellInfo.key) >= 0) {
+                if(compare(indexInfo.key, middleCellInfo.key) >= 0) {
                 	return splitPageNo;
                 }
                 return startPage.getPageNo();
             } else {
                 let parentPage = await startPage.getPageParent();
                 let splitPageNo = this.btreeMeta.increaseMaxPageNo();
+                let splitPage = new IndexPage(pageType, null, splitPageNo);
                 middleCellInfo.childPageNo = splitPageNo;
                 let splitParentNo = await this.rebalance(parentPage, middleCellInfo);
-                let splitPage = new IndexPage(pageType, splitParentNo,
-	                    splitPageNo);
-                splices.forEach(s=> {
-                	splitPage.insertCell(s.key, s.id, s.childPageNo);
-                });
-                if(IdCompare(indexInfo.key, middleCellInfo.key) >= 0) {
+                splitPage.setParentPage(splitParentNo);
+
+                // 将splitPage和startPage组成双向链表
+                let nextPageNo = startPage.getNextPageNo();
+                if(nextPageNo) {
+                    let nextPage = await startPage.getNextPage();
+                    splitPage.setNextPageNo(nextPageNo);
+                    nextPage.setPrePageNo(splitPage.getPageNo());
+                }
+				splitPage.setPrePageNo(startPage.getPageNo());
+				startPage.setNextPageNo(splitPage.getPageNo());
+
+                for(let i = 0; i < splices.length; i ++) {
+                	let s = splices[i];
+                    splitPage.insertCell(s.key, s.id, s.childPageNo);
+                }
+                if(!startPage.isLeaf()) {
+                	for(let i = 0; i < splices.length; i ++) {
+                		let s = splices[i];
+                		// 同时修改childPage的parentPage
+                        let childPage = await IndexPage.LoadPage(s.childPageNo);
+                        childPage.setParentPage(splitPageNo);
+	                }
+
+                }
+                if(compare(indexInfo.key, middleCellInfo.key) >= 0) {
                 	return splitPageNo;
                 }
                 return startPage.getPageNo();

@@ -19,10 +19,11 @@ const PAGE_TYPE_LEAF = 1 << 1;
 const PAGE_TYPE_INTERNAL = 1 << 2;
 const PAGE_TYPE_ROOT = 1 << 3;
 const PAGE_TYPE_INDEX = 1 << 4;
+const PAGE_TYPE_REUSE = 1 << 5;
 const PAGE_TYPE_SIZE = 1;     // the byteSize of the type
 
-const cache = Lru(64 * 1024);
-const DATACACHE = Lru(64 * 64);
+const cache = Lru(128 * 1024);
+const DATACACHE = Lru(64 * 64 * 32);
 const ID_CELL_BYTES_SIZE = 8;
 const DATA_PAGE_HEADER_BYTES_SIZE = 8;
 const DATA_CELL_MAX_SIZE = 256;
@@ -54,6 +55,7 @@ class DataPage {
 	constructor(pageNo) {
 		this.pageNo = pageNo;      	// start from zero
 		this.data = Buffer.alloc(PAGE_SIZE);
+		this.data.writeInt32LE(pageNo, 0);
 		this.size = 0;				// the size of data
 		this.offset = PAGE_SIZE;  	// write data from bottom up
 
@@ -229,19 +231,13 @@ class DataPage {
 						}
 						page.__initPage();
 						DATACACHE.set(pageNo, page);
-						resolve();
+						resolve(page);
 					});
-				if(err) {
-					reject(err);
-				} else {
-					DATACACHE.set(pageNo, page);
-					resolve()
-				}
 			})
 		});
 
-		await loadFromDisk;
-		return page;
+		let filledPage = await loadFromDisk;
+		return filledPage;
 	}
 
 	static InitFile(directory) {
@@ -305,7 +301,7 @@ class IdPage {
 			cache.set(pageNo, this);
 		}
 
-		this.data.writeInt8(type, 0);
+		type && this.data.writeInt8(type, 0);
 		this.size = 0;
 		this.data.writeInt16LE(this.size,  PAGE_TYPE_SIZE + PAGENO_BYTES);
 	}
@@ -377,7 +373,7 @@ class IdPage {
 
 	__getCellInfoByIndex(index) {
         let cellByteSize = this.size * ONE_ID_CELL_BYTES;
-        // sizeOf(size) +
+        // sizeOf(type) +
         // sizeOf(paegParent, pageNo, prePage, nextPage) + sizeOf(size)
         let cellByteBegin = PAGE_TYPE_SIZE +
             PAGENO_BYTES * 4 + SIZENO_BYTES_IN_CELL;
@@ -413,6 +409,8 @@ class IdPage {
 		}
 
 		while(maxIndex > minIndex) {
+            minCellInfo = this.__getCellInfoByIndex(minIndex);
+            maxCellInfo = this.__getCellInfoByIndex(maxIndex);
 			if(IdCompare(minCellInfo.id, id) === 0) {
 				return minCellInfo.childPageNo;
 			}
@@ -516,6 +514,7 @@ class IdPage {
 	isPendingPage() {
 		return this.pageParent < 0;
 	}
+
 	__initPage() {
 		let dataBuffer = this.data;
 		let type = dataBuffer.readInt8(0);
@@ -547,6 +546,7 @@ class IdPage {
             fs.open(filePath, 'r', (err, file)=> {
                 fs.read(file, page.data, 0, PAGE_SIZE, pageNo * PAGE_SIZE,
                     (err, data)=> {
+                		cache.set(pageNo, page);
 	                    page.__initPage();
                         resolve(page);
                     })
@@ -602,13 +602,13 @@ class IdPage {
 	}
 };
 
-const INDEXPAGE_HEADER_SIZE = 1 + 4 + 2 + 4 + 2;
+const INDEXPAGE_HEADER_SIZE = 1 + 4 + 2 + 4 + 2 + 4 + 4;
 const CELLDATA_BYTE_SIZE = 2;
 class IndexPage {
 	/*
 		the format of this kind page is :
 -------------------------------------------------------------------------
-		| type |  pageParent  |  size  |  pageNo  | offset |
+		| type |  pageParent  |  size  |  pageNo  | offset | prePageNo | nextPageNo
 				[offset1, offset2, offset3 ......]
 				......
 				[cell1, cell2, cell3......]
@@ -620,6 +620,8 @@ class IndexPage {
 			size:        2b  // the size of cell
 			pageNo:      4b  // this page number
 			offset:      2b  // where this page write from
+			prePageNo:   4b  // the pre page of this page (same level)
+			nextPageNo:  4b  // the next page of this page (same level)
 
 		offsets:
 			offset:      2b  // pointer of the cellData
@@ -630,8 +632,8 @@ class IndexPage {
 			id:          6b  // the key pair <key, id>
 			childPageNo: 4b  // cell pointers for its child page
 	*/
-	constructor(type, pageParent, pageNo) {
-		this.data = Buffer.alloc(PAGE_SIZE);
+	constructor(type, pageParent, pageNo, bufferData) {
+		this.data = bufferData ? bufferData : Buffer.alloc(PAGE_SIZE);
 		if(!pageParent && !pageNo && !type) {
 		    return;
         }
@@ -669,18 +671,56 @@ class IndexPage {
 
 	setType(type) {
 	    this.type = type;
+	    this.data.writeInt8(type, 0);
+	    return this;
     }
+
+    setPrePageNo(prePageNo) {
+		this.prePageNo = prePageNo;
+		this.data.writeInt32LE(prePageNo, INDEXPAGE_HEADER_SIZE-8);
+		return this;
+	}
+
+	setNextPageNo(nextPageNo) {
+		this.nextPageNo = nextPageNo;
+		this.data.writeInt32LE(nextPageNo, INDEXPAGE_HEADER_SIZE-4);
+		return this;
+	}
+
+    getPrePageNo() {
+		return this.data.readInt32LE(INDEXPAGE_HEADER_SIZE-8);
+    }
+
+	getNextPageNo() {
+		return this.data.readInt32LE(INDEXPAGE_HEADER_SIZE-4);
+	}
+
+	getNextPage() {
+		let nextPageNo = this.getNextPageNo();
+		return IndexPage.LoadPage(nextPageNo);
+	}
+
+	getPrePage() {
+		let prePageNo = this.getPrePageNo();
+		return IndexPage.LoadPage(prePageNo);
+	}
+
+	hasRoomForBytes(bytesNum) {
+		let free = this.freeData();
+		return free >= bytesNum;
+	}
 
 	// true: this page has room for key, false: not 
 	hasRoomFor(key) {
-		let free = this.freeData(),
-			oneCellBytes = this.oneCellBytes(key);
+		let oneCellBytes = this.oneCellBytes(key) + 2;
 		// 需要的空间为一个cell的空间和一个offset指向；
-		return free >= (oneCellBytes + 2)
+		return this.hasRoomForBytes(oneCellBytes);
 	}	
 
 	setParentPage(pageNo) {
         this.pageParent = pageNo;
+        this.data.writeInt32LE(pageNo, 1);
+        return this;
 	}
 
 	getParentPageNo() {
@@ -689,6 +729,8 @@ class IndexPage {
 
 	setPageNo(pageNo) {
 	    this.pageNo = pageNo;
+	    this.data.writeInt32LE(pageNo, 1 + 4 + 2);
+	    return this;
     }
 
     setSize(size) {
@@ -708,6 +750,8 @@ class IndexPage {
 
 	setOffset(offset) {
 	    this.offset = offset;
+	    this.data.writeInt16LE(offset, 1 + 4 + 2 + 4);
+	    return this;
     }
 
     getOffset() {
@@ -722,8 +766,55 @@ class IndexPage {
 		return this.type & PAGE_TYPE_LEAF;
 	}
 
+    /**
+	 * reuse page的数据结构：
+	 * 	 +-------------------------------+
+		 |type(1b) |next(4b)|  ...       |
+		 +-------------------------------+
+     * @param nextReuseNo
+     */
+    transformToReuse(nextReuseNo) {
+        this.setType(PAGE_TYPE_REUSE, true);
+        this.nextReuseNo = nextReuseNo;
+		this.data.writeInt32LE(nextReuseNo, 1);
+    }
+
+    static LoadAsReuse(pageNo) {
+    	return IndexPage.__loadRawPage(pageNo, (dataBuffer)=> {
+    		let reuseIndexPage = new IndexPage().setType(PAGE_TYPE_REUSE);
+    		reuseIndexPage.nextReuseNo = dataBuffer.readInt32LE(1);
+    		cache.set(pageNo, reuseIndexPage);
+    		return reuseIndexPage;
+		});
+	}
+	// 只在type为PAGE_TYPE_REUSE时候才调用
+	reUseNext() {
+    	let nextReuseNo = this.data.readInt32LE(1);
+    	return nextReuseNo;
+	}
+
+    /**
+	 * 每个cell的构成如：
+					 +-------------------+------> offset
+					 |    dataSize(2b)   |------> dataSize = size(key) + size(id) + size(childPageNo)
+					 +-------------------+
+					 |                   |
+					 |      key(nb)      |
+					 |                   |
+					 +-------------------+
+					 |      id(6b)       |
+					 +-------------------+
+					 |   childPageNo(4b) |
+					 +-------------------+
+     * @param offset
+     * @param index
+     * @returns {{key: String, id: {timeId: null, count: null}, childPageNo: Number}}
+     */
 	getCellByOffset(offset, index) {
 	    console.log('offset', offset, index);
+	    if(offset === 0) {
+	    	console.log(index);
+	    }
 		let dataSize = this.data.readInt16LE(offset);
 		let data = this.data.slice(
 			offset + CELLDATA_BYTE_SIZE, 
@@ -739,7 +830,7 @@ class IndexPage {
 
 		let childPageNoBuffer = data.slice(
 			keySize + ID_BYTES, PAGENO_BYTES + ID_BYTES + keySize);
-		let childPageNo = childPageNoBuffer.readInt16LE(0);
+		let childPageNo = childPageNoBuffer.readInt32LE(0);
 
 		return {key, id, childPageNo}
 	}
@@ -775,7 +866,146 @@ class IndexPage {
 		return this.getCellByOffset(offset, index);
 	}
 
-	__findNearestCellInfo(key) {
+	__rewritePage(cells) {
+		this.setSize(0);
+		this.setOffset(PAGE_SIZE);
+
+		for(let cell of cells) {
+			let {key, id, childPageNo} = cell;
+			this.insertCell(key, id, childPageNo);
+		}
+	}
+
+    /**
+	 * 判断没有key的情况下，该page是否是小于或者大于一半；
+	 * 由于key不是定长，而且page由一整page分裂成两半，
+	 * 所以这里判断是否大于一半，也是根据其和其相邻page能否被合并成一个page判断；
+	 * 如果能被合并成一个page页面，则返回true，否则返回false;
+	 *
+	 * 这里做相应的简化：
+	 * a: 最左的page和右侧的邻page匹配判断
+	 * b: 其他的page和左侧的邻page匹配判断
+     * @param key
+     */
+	async isLessHalfWithoutKey(key) {
+		let cellSize = this.oneCellBytes(key);
+		let adjacentPage,
+			adjacentPageNo,
+			adjacentCellsBytes, needBytes;
+		if(this.isLeftMost()) {
+			adjacentPageNo = this.getNextPageNo();
+		} else {
+            adjacentPageNo = this.getPrePageNo();
+		}
+        adjacentPage = await IndexPage.LoadPage(adjacentPageNo);
+        adjacentCellsBytes = adjacentPage.cellsBytes();
+        // todo: adjacentCellsBytes小于cellSize
+		needBytes = adjacentCellsBytes - cellSize;
+
+        return this.hasRoomForBytes(needBytes);
+	}
+
+    deleteCellByIndex(index) {
+		let filtered = [];
+		for(let i = 0; i < this.size; i ++) {
+			if(i !== index) {
+				filtered.push(this.getCellInfoByIndex(i));
+			}
+		}
+		this.__rewritePage(filtered);
+    }
+
+    updateCellInfo(cellInfo, index) {
+		let filtered = [];
+		for(let i = 0; i < this.size; i ++) {
+			if(i===index) {
+				filtered.push(cellInfo);
+			} else {
+				filtered.push(this.getCellInfoByIndex(i));
+			}
+		}
+
+		this.__rewritePage(filtered);
+    }
+
+    // 返回所有的cells信息
+    allCells() {
+		let all = [];
+		for(let i = 0; i < this.size; i ++) {
+			all.push(this.getCellInfoByIndex(i));
+		}
+		return all;
+    }
+
+    batchInsertCells(cells) {
+		for(let cell of cells) {
+			let {key, id, childPageNo} = cell;
+			this.insertCell(key, id, childPageNo);
+		}
+	}
+
+    // 返回该page的offset区域和celldata区域总bytes
+    cellsBytes() {
+        return this.size * OFFSET_BYTES_SIZE + (PAGE_SIZE - this.offset);
+    }
+
+    // 判断该page是否为最左边
+    isLeftMost() {
+		return !this.getPrePageNo();
+	}
+
+	// 判断该page是否为最右边
+	isRightMost() {
+		return !this.getNextPageNo();
+	}
+
+    // 找到最左的和key一样大小的cellInfo
+	// todo 跨page查找
+	__theLeftMostEqual(start, key) {
+		let cellInfo = this.getCellInfoByIndex(start);
+		while(compare(key, cellInfo['key']) === 0) {
+			if(start === 0) {
+				return {... cellInfo, cellIndex: 0};
+			}
+			start --;
+			cellInfo = this.getCellInfoByIndex(start);
+		}
+
+		return {... this.getCellInfoByIndex(start + 1), cellIndex: start + 1};
+	}
+
+	// 找到最右和key一样大小的cellInfo
+	// todo 跨page查找
+	__theRightMostEqual(start, key) {
+		let cellInfo = this.getCellInfoByIndex(start);
+		while(compare(key, cellInfo['key']) === 0) {
+			if(start === this.size - 1) {
+				return {... cellInfo, cellIndex: this.size - 1}
+			}
+			start ++;
+			cellInfo = this.getCellInfoByIndex(start);
+		}
+
+		return {... this.getCellInfoByIndex(start - 1), cellIndex: start - 1};
+	}
+
+    /**
+     * isRightMost为false时，获取左侧最接近的cell；
+     * 如 cells如下： (key1 < key2 < key3 < ...)
+     * ---------------------------------------------------------------------
+     * [key1, id1], [key1, id2], [key2, id3], [key2, id4], [key3, id4]......
+     * ---------------------------------------------------------------------
+     * 如 __findNearestCellInfo(key1)则返回的为id1;
+     *    __findNearestCellInfo(key2) 返回的为id3;
+	 *
+	 * isRight为true时， 返回右侧最接近的cell
+	 * 	  __findNearestCellInfo(key1, true) 返回为id2
+	 * 	  __findNearestCellInfo(key2, true) 返回为id4
+     * @param key, isRightMost 为true的时候
+     * @returns {*}
+     * @private
+     */
+    findNearestCellInfo(key, isRightMost) {
 		if(this.size === 0) {
 			return;
 		}
@@ -791,18 +1021,30 @@ class IndexPage {
 			let minCellInfo = this.getCellInfoByIndex(minIndex);
 			let maxCellInfo = this.getCellInfoByIndex(maxIndex);
 
+			if(minIndex + 1 === maxIndex
+				&& compare(key, minCellInfo.key) > 0
+				&& compare(key, maxCellInfo.key) < 0
+			) {
+					return {... minCellInfo, cellIndex: minIndex}
+			}
+
 			let middle = (minIndex + maxIndex) >> 1;
 			let middleCellInfo = this.getCellInfoByIndex(middle);
-			if(compare(key, maxCellInfo['key']) >= 0) {
-				return {... maxCellInfo, cellIndex: maxIndex}
+			if(compare(key, maxCellInfo.key) >= 0) {
+				// return {... maxCellInfo, cellIndex: maxIndex};
+				if(compare(key, maxCellInfo.key) > 0) {
+					return {... maxCellInfo, cellIndex: maxIndex};
+				}
+				return this.__theLeftMostEqual(maxIndex, key);
 			}
-			if(compare(key, minCellInfo['key']) <= 0) {
+			if(compare(key, minCellInfo.key) <= 0) {
 				return {... minCellInfo, cellIndex: 0}
 			}
 			if(compare(middleCellInfo.key, key) > 0) {
 				maxIndex = middle;
 			} else if(compare(middleCellInfo.key, key) === 0) {
-				return { ... middleCellInfo, cellIndex: middle};
+				return isRightMost ? this.__theRightMostEqual(middle, key)
+					               :this.__theLeftMostEqual(middle, key);
 			} else {
 				let middleNext = middle + 1;
 				let middleNextCellInfo = this.getCellInfoByIndex(middleNext);
@@ -815,38 +1057,75 @@ class IndexPage {
 		}
 	}
 
-	static LoadPage(pageNo) {
-		let cachedPage = cache.get(pageNo);
-		if(cachedPage) {
-			return Promise.resolve(cachedPage);
+	collectAllEqualIds(key) {
+    	let result = [];
+		let leftMost = this.findNearestCellInfo(key);
+		if(leftMost) {
+            let startCellInfo = leftMost;
+            let startIndex = leftMost.cellIndex;
+            do {
+                result.push(startCellInfo);
+                if (startIndex === this.size - 1) {
+                    return result;
+                }
+                startIndex ++;
+                startCellInfo = {
+	                ... this.getCellInfoByIndex(startIndex),
+	                cellIndex: startIndex
+                }
+            } while (compare(key, startCellInfo.key) === 0);
+        }
+
+		return result;
+	}
+
+	isLastCellInfo(cellIndex) {
+        return this.size === cellIndex;
+	}
+
+	static __loadRawPage(pageNo, fill) {
+    	let cachedPage = cache.get(pageNo);
+    	if(cachedPage) {
+    		return Promise.resolve(cachedPage);
 		}
-        let page = new IndexPage();
+
         return new Promise((resolve, reject)=> {
             fs.open('js/js.index', 'r', (err, file)=> {
                 if(err) {
                     return reject(err);
                 }
-
-                fs.read(file, page.data, 0, PAGE_SIZE, pageNo * PAGE_SIZE,
+				let dataBuffer = Buffer.alloc(PAGE_SIZE);
+                fs.read(file, dataBuffer, 0, PAGE_SIZE, pageNo * PAGE_SIZE,
                     (err, data)=> {
                         if(err) {
                             return reject(err);
                         }
-                        let type = page.data.readInt8(0);
-                        page.setType(type);
-                        let pageParent = page.data.readInt32LE(1);
-                        page.setPageNo(pageParent);
-                        let size = page.data.readInt16LE(1+4);
-                        page.setSize(size);
-                        let pageNo = page.data.readInt32LE(1+4+2);
-                        page.setPageNo(pageNo);
-                        let offset = page.data.readInt16LE(1+4+2+2);
-                        page.setOffset(offset);
-
-                        resolve(page);
+                        resolve(fill(dataBuffer));
                     })
             })
         });
+	}
+
+	static LoadPage(pageNoN) {
+		return this.__loadRawPage(pageNoN, (dataBuffer)=> {
+			let page = new IndexPage(null, null, null, dataBuffer);
+            let type = dataBuffer.readInt8(0);
+            page.setType(type);
+            let pageParent = dataBuffer.readInt32LE(1);
+            page.setParentPage(pageParent);
+            let size = dataBuffer.readInt16LE(1+4);
+            page.setSize(size);
+            let pageNo = dataBuffer.readInt32LE(1+4+2);
+            page.setPageNo(pageNo);
+            let offset = dataBuffer.readInt16LE(1+4+2+4);
+            page.setOffset(offset);
+            let prePageNo = dataBuffer.readInt32LE(INDEXPAGE_HEADER_SIZE - 8);
+            page.setPrePageNo(prePageNo);
+            let nextPageNo = dataBuffer.readInt32LE(INDEXPAGE_HEADER_SIZE - 4);
+            page.setNextPageNo(nextPageNo);
+            cache.set(pageNo, page);
+            return page;
+		});
 	}
 
     getPageParent() {
@@ -859,6 +1138,12 @@ class IndexPage {
 		let totalByteSize =
             CELLDATA_BYTE_SIZE + keyByteSize + ID_BYTES + PAGENO_BYTES;
 		this.offset -= totalByteSize;
+		// 先更新this.offset
+		this.setOffset(this.offset);
+
+		if(this.size > 20) {
+			console.log(this);
+		}
 		this.data.writeInt16LE(totalByteSize - CELLDATA_BYTE_SIZE,
 				this.offset);
 		this.data.write(key, this.offset + CELLDATA_BYTE_SIZE);
@@ -959,16 +1244,32 @@ class IndexPage {
 		})
     }
 
-	getChildPage(key) {
+    getNearestChildPage(key) {
 		if(this.type & PAGE_TYPE_LEAF) {
 			return Promise.resolve(this);
 		}
-		let cellInfo = this.__findNearestCellInfo(key);
+		let cellInfo = this.findNearestCellInfo(key);
 		if(!cellInfo) {
 			console.log('cellinfo',key);
 		}
 
 		return IndexPage.LoadPage(cellInfo.childPageNo);
+	}
+
+	findCorrectCellInfo(key, id) {
+    	let startIndex = this.findNearestCellInfo(key);
+    	let startCellInfo ;
+    	let startPage = this;
+
+    	// todo 跨page的查找
+		do {
+			startCellInfo = this.getCellInfoByIndex(startIndex);
+			if(compare(startCellInfo.key, key) === 0
+				&& IdCompare(startCellInfo.id, id) === 0) {
+				return Object.assign(startCellInfo, {cellIndex: startIndex});
+			}
+			startIndex++;
+		} while(startIndex < startPage.getSize());
 	}
 
 	// split into half by a indexPair
