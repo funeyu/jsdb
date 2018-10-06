@@ -54,15 +54,19 @@ fn();
 ```javascript
 const fudb = require('fudb');
 
-fudb.range('name', { lt: 'funer809000900091', gt: 'funer8090009000910001' }).then((data) => {
-  console.log('count', data.total());
-  console.log('ids', data.cells);
-  data.fetch().then((details) => {
-    details.forEach((d) => {
-      console.log('detail', fudb.Parse(d));
+const fn = async () => {
+  const db = await fudb.Connect('js');
+  db.range('name', { lt: 'funer809000900091', gt: 'funer809000900091' }).then((data) => {
+    console.log('count', data.total());
+    console.log('ids', data.cells);
+    data.fetch().then((details) => {
+      details.forEach((d) => {
+        console.log('detail', fudb.Parse(d));
+      });
     });
   });
-});
+}
+fn();
 
 ```
 
