@@ -5,6 +5,7 @@ jsDB - 一个实现btree索引的小玩具
 
 Requirements
 ------------
+* node(>= v9.0.0)
 * lru-cache(用来做page缓存)
 
 Quick Start
