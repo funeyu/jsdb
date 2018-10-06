@@ -1,4 +1,4 @@
-
+const rimraf = require('rimraf');
 const {
   DataPage, IdPage, IndexPage,
 } = require('./page.js');
@@ -101,11 +101,9 @@ class JSDB {
     const indexBtree = this.keysMap[key];
     try {
       const id = await indexBtree.findId(value);
-      console.log('id', id);
       const result = await this.findById(id);
       return result;
     } catch (err) {
-      console.log('err', err);
       return null;
     }
   }
@@ -224,41 +222,13 @@ class JSDB {
 
     return db;
   }
-}
 
-
-async function test() {
-  const db = await JSDB.Create('js', 'name');
-  for (let i = 0; i < 30000; i += 1) {
-    await db.put({
-      name: `funer80900090009${i}`,
-      sex: `java${i}`,
-      className: `super${i}`,
-    }); // eslint-disable-line
+  static Parse(data) {
+    return jsonParse(data);
   }
 
-  await db.flush();
-}
-
-async function connect() {
-  const db = await JSDB.Connect('js');
-  for (let i = 0; i < 30000; i += 1) {
-    const result = await db.findByKey('name', `funer80900090009${i}`);
-    console.log('conecctttttttt', result);
-    if (!result) {
-      throw new Error('error!');
-    }
+  static Clean(directory, cb) {
+    rimraf(directory, cb);
   }
-
-  db.range('name', { lt: 'funer809000900091', gt: 'funer8090009000910001' }).then((data) => {
-    console.log('count', data.total());
-    console.log('ids', data.cells);
-    data.fetch().then((details) => {
-      details.forEach(d=> {
-        console.log('detail', jsonParse(d));
-      });
-    });
-  });
 }
-// test();
-connect();
+module.exports = JSDB;

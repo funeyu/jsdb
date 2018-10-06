@@ -85,7 +85,7 @@ class DataPage {
 
       this.data.writeUInt32LE(id.timeId,
         this.size * ID_CELL_BYTES_SIZE + DATA_PAGE_HEADER_BYTES_SIZE);
-      this.data.writeInt16LE(id.count,
+      this.data.writeUInt16LE(id.count,
         this.size * ID_CELL_BYTES_SIZE + DATA_PAGE_HEADER_BYTES_SIZE + 4);
       this.data.writeUInt16LE(this.offset,
         this.size * ID_CELL_BYTES_SIZE + DATA_PAGE_HEADER_BYTES_SIZE + 6);
@@ -1149,9 +1149,6 @@ class IndexPage {
     // 先更新this.offset
     this.setOffset(this.offset);
 
-    if (this.size > 20) {
-      console.log(this);
-    }
     this.data.writeUInt16LE(totalByteSize - CELLDATA_BYTE_SIZE,
       this.offset);
     this.data.write(key, this.offset + CELLDATA_BYTE_SIZE);

@@ -400,7 +400,7 @@ class IdBtree {
         this.btreeMeta = new BtreeMeta(pageBuffer);
       }
       const idPage = new IdPage(PAGE_TYPE_ID | PAGE_TYPE_ROOT | PAGE_TYPE_LEAF,
-        -1, 1);
+        0, 1);
       idPage.setPageNo(1);
       this.btreeMeta.setMaxPageNo(1)
         .setIdBtreeMeta({
@@ -463,7 +463,7 @@ class IdBtree {
     if (page.isRoot()) {
       page.setType(pageType);
       maxPageNo = this.btreeMeta.increaseMaxPageNo();
-      const idRootPage = new IdPage(PAGE_TYPE_ID | PAGE_TYPE_ROOT, -1,
+      const idRootPage = new IdPage(PAGE_TYPE_ID | PAGE_TYPE_ROOT, 0,
         maxPageNo);
       page.setPageParent(maxPageNo, true);
       this.rootPage = idRootPage;
@@ -535,7 +535,7 @@ class IndexBtree {
     }
     this.rootPageNo = btreeMeta.increaseMaxPageNo();
     const indexPage = new IndexPage(
-      PAGE_TYPE_INDEX | PAGE_TYPE_ROOT | PAGE_TYPE_LEAF, -1, this.rootPageNo,
+      PAGE_TYPE_INDEX | PAGE_TYPE_ROOT | PAGE_TYPE_LEAF, 0, this.rootPageNo,
     );
     btreeMeta.addIndexRootPage(key, this.rootPageNo);
     this.rootPage = indexPage;
@@ -633,7 +633,6 @@ class IndexBtree {
     const deepestPage = await this.walkDeepest(key);
 
     const hasRoom = deepestPage.hasRoomFor(key);
-    console.log('hasRoom', hasRoom, 'no', key, deepestPage.getPageNo());
     if (hasRoom) {
       deepestPage.insertCell(key, id, 0);
       return;
