@@ -84,7 +84,29 @@ fn();
 architecture
 ------------
   由两个文件组成，一个为data文件，一个为index文件; index里有一个id组成的btree和user定义组成的一个btree；
-id是由内部按照时间生成的一自增的对象，形如：`{timeId: xxx, count: xxx}`
+id是由内部按照时间生成的一自增的对象，形如：`{timeId: xxx, count: xxx}`， 生成自增id的算法；这里有个假定：就是一秒内添加的速度不能大于256 * 256；
+```javascript
+// generate auto incresed id and the length of id : 6
+let count = 0; // less than 256 * 256
+let id = 0;
+const IdGen = function () {
+  let timeId = +new Date();
+  timeId = ~~(timeId / 1000);
+  if (timeId > id) {
+    count = 0;
+    id = timeId;
+  } else {
+    count += 1;
+  }
+
+  return {
+    timeId,
+    count,
+  };
+};
+```
+
+![文件结构说明](https://raw.githubusercontent.com/funeyu/jsdb/master/screenshots/flow.png)
 
 ToDo List
 ---------
