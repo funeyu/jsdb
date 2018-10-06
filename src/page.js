@@ -77,23 +77,23 @@ class DataPage {
     }
     if (this.freeData() > needByte) {
       // write the cellData's size
-      this.data.writeInt16LE(dataSize - DATA_CELL_SIZE_BYTES,
+      this.data.writeUInt16LE(dataSize - DATA_CELL_SIZE_BYTES,
         this.offset - dataSize);
       // write the cellData
       this.data.write(cellData, this.offset - dataSize + DATA_CELL_SIZE_BYTES);
       this.offset = this.offset - dataSize;
 
-      this.data.writeInt32LE(id.timeId,
+      this.data.writeUInt32LE(id.timeId,
         this.size * ID_CELL_BYTES_SIZE + DATA_PAGE_HEADER_BYTES_SIZE);
       this.data.writeInt16LE(id.count,
         this.size * ID_CELL_BYTES_SIZE + DATA_PAGE_HEADER_BYTES_SIZE + 4);
-      this.data.writeInt16LE(this.offset,
+      this.data.writeUInt16LE(this.offset,
         this.size * ID_CELL_BYTES_SIZE + DATA_PAGE_HEADER_BYTES_SIZE + 6);
       this.size += 1;
       // write size
-      this.data.writeInt16LE(this.size, PAGENO_BYTES);
+      this.data.writeUInt16LE(this.size, PAGENO_BYTES);
       // write offset
-      this.data.writeInt16LE(this.offset,
+      this.data.writeUInt16LE(this.offset,
         PAGENO_BYTES + OFFSET_BYTES_SIZE);
       return true;
     }
@@ -103,21 +103,21 @@ class DataPage {
 
   __formId(index) {
     const start = DATA_PAGE_HEADER_BYTES_SIZE + index * ID_CELL_BYTES_SIZE;
-    const timeId = this.data.readInt32LE(start);
-    const count = this.data.readInt16LE(start + 4);
-    const offset = this.data.readInt16LE(start + 4 + 2);
+    const timeId = this.data.readUInt32LE(start);
+    const count = this.data.readUInt16LE(start + 4);
+    const offset = this.data.readUInt16LE(start + 4 + 2);
     return { timeId, count, offset };
   }
 
   __getDataByOffset(offset) {
-    const dataSize = this.data.readInt8(offset);
+    const dataSize = this.data.readUInt8(offset);
     const copyData = Buffer.from(this.data);
     const buffer = copyData.slice(offset + 1, offset + 1 + dataSize);
     return buffer.toString();
   }
 
   getCellData(idInfo) {
-    const size = this.data.readInt16LE(PAGENO_BYTES);
+    const size = this.data.readUInt16LE(PAGENO_BYTES);
 
     let maxIdInfo = this.__formId(size - 1);
     let minIdInfo = this.__formId(0);
@@ -194,9 +194,9 @@ class DataPage {
 
   // header组成：pageNo(4b) + size(2b) + offset(2b)
   __initPage() {
-    const pageNo = this.data.readInt32LE(0);
-    const size = this.data.readInt16LE(4);
-    const offset = this.data.readInt16LE(6);
+    const pageNo = this.data.readUInt32LE(0);
+    const size = this.data.readUInt16LE(4);
+    const offset = this.data.readUInt16LE(6);
 
     this.setPageNo(pageNo)
       .setSize(size)
@@ -284,20 +284,20 @@ class IdPage {
     this.type = type;
     if (typeof pageParent === 'number') {
       this.pageParent = pageParent;
-      this.data.writeInt32LE(pageParent, PAGE_TYPE_SIZE);
+      this.data.writeUInt32LE(pageParent, PAGE_TYPE_SIZE);
     }
 
     if (typeof pageNo === 'number') {
       this.pageNo = pageNo;
-      this.data.writeInt32LE(pageNo, PAGE_TYPE_SIZE + PAGENO_BYTES + SIZENO_BYTES_IN_CELL);
+      this.data.writeUInt32LE(pageNo, PAGE_TYPE_SIZE + PAGENO_BYTES + SIZENO_BYTES_IN_CELL);
       cache.set(pageNo, this);
     }
 
     if (type) {
-      this.data.writeInt8(type, 0);
+      this.data.writeUInt8(type, 0);
     }
     this.size = 0;
-    this.data.writeInt16LE(this.size, PAGE_TYPE_SIZE + PAGENO_BYTES);
+    this.data.writeUInt16LE(this.size, PAGE_TYPE_SIZE + PAGENO_BYTES);
   }
 
   static InitFile(directory) {
@@ -309,7 +309,7 @@ class IdPage {
   setType(type, needStore) {
     this.type = type;
     if (needStore) {
-      this.data.writeInt8(type, 0);
+      this.data.writeUInt8(type, 0);
     }
     return this;
   }
@@ -318,7 +318,7 @@ class IdPage {
     this.pageParent = pageNo;
     const start = PAGE_TYPE_SIZE;
     if (needStore) {
-      this.data.writeInt32LE(pageNo, start);
+      this.data.writeUInt32LE(pageNo, start);
     }
     return this;
   }
@@ -327,7 +327,7 @@ class IdPage {
     this.size = size;
     const start = PAGE_TYPE_SIZE + PAGENO_BYTES;
     if (needStore) {
-      this.data.writeInt16LE(size, start);
+      this.data.writeUInt16LE(size, start);
     }
     return this;
   }
@@ -336,7 +336,7 @@ class IdPage {
     this.pageNo = pageNo;
     const start = PAGE_TYPE_SIZE + PAGENO_BYTES + SIZENO_BYTES_IN_CELL;
     if (needStore) {
-      this.data.writeInt32LE(pageNo, start);
+      this.data.writeUInt32LE(pageNo, start);
     }
     return this;
   }
@@ -345,7 +345,7 @@ class IdPage {
     this.prePageNo = prePageNo;
     const start = PAGE_TYPE_SIZE + PAGENO_BYTES * 2 + SIZENO_BYTES_IN_CELL;
     if (needStore) {
-      this.data.writeInt32LE(prePageNo, start);
+      this.data.writeUInt32LE(prePageNo, start);
     }
     return this;
   }
@@ -354,7 +354,7 @@ class IdPage {
     this.nextPageNo = nextPageNo;
     const start = PAGE_TYPE_SIZE + PAGENO_BYTES * 3 + SIZENO_BYTES_IN_CELL;
     if (needStore) {
-      this.data.writeInt32LE(nextPageNo, start);
+      this.data.writeUInt32LE(nextPageNo, start);
     }
     return this;
   }
@@ -385,9 +385,9 @@ class IdPage {
     const cellByteBegin = PAGE_TYPE_SIZE
             + PAGENO_BYTES * 4 + SIZENO_BYTES_IN_CELL;
 
-    const timeId = this.data.readInt32LE(cellByteBegin + index * ONE_ID_CELL_BYTES);
-    const count = this.data.readInt16LE(cellByteBegin + index * ONE_ID_CELL_BYTES + 4);
-    const childPageNo = this.data.readInt32LE(cellByteBegin + index * ONE_ID_CELL_BYTES + 4 + 2);
+    const timeId = this.data.readUInt32LE(cellByteBegin + index * ONE_ID_CELL_BYTES);
+    const count = this.data.readUInt16LE(cellByteBegin + index * ONE_ID_CELL_BYTES + 4);
+    const childPageNo = this.data.readUInt32LE(cellByteBegin + index * ONE_ID_CELL_BYTES + 4 + 2);
 
     return {
       id: { timeId, count },
@@ -469,7 +469,7 @@ class IdPage {
           reject(err);
         } else {
           fs.read(file, pageOne, 0, PAGE_SIZE, 0, (error) => {
-            const rootPageNo = pageOne.readInt32LE();
+            const rootPageNo = pageOne.readUInt32LE();
             if (error) {
               reject(error);
             } else {
@@ -483,7 +483,7 @@ class IdPage {
 
   static setRootPage(rootPageNo) {
     const pageData = Buffer.alloc(PAGE_SIZE);
-    pageData.writeInt32LE(rootPageNo, 0);
+    pageData.writeUInt32LE(rootPageNo, 0);
 
     fs.open(INDEXPATH, 'w', (err, file) => {
       fs.writeSync(file, pageData, 0, PAGE_SIZE, 0);
@@ -498,9 +498,9 @@ class IdPage {
   insertCell(id, childPageNo) {
     if (this.freeData() >= ONE_ID_CELL_BYTES) {
       const start = this.size * ONE_ID_CELL_BYTES + ID_HEADER_PAGE_BYTES;
-      this.data.writeInt32LE(id.timeId, start);
-      this.data.writeInt16LE(id.count, start + 4);
-      this.data.writeInt32LE(childPageNo, start + 4 + 2);
+      this.data.writeUInt32LE(id.timeId, start);
+      this.data.writeUInt16LE(id.count, start + 4);
+      this.data.writeUInt32LE(childPageNo, start + 4 + 2);
       this.increaseSize();
       return true;
     }
@@ -522,14 +522,14 @@ class IdPage {
 
   __initPage() {
     const dataBuffer = this.data;
-    const type = dataBuffer.readInt8(0);
-    const pageParent = dataBuffer.readInt32LE(PAGE_TYPE_SIZE);
-    const size = dataBuffer.readInt16LE(PAGE_TYPE_SIZE + PAGENO_BYTES);
-    const pageNo = dataBuffer.readInt32LE(PAGE_TYPE_SIZE + PAGENO_BYTES
+    const type = dataBuffer.readUInt8(0);
+    const pageParent = dataBuffer.readUInt32LE(PAGE_TYPE_SIZE);
+    const size = dataBuffer.readUInt16LE(PAGE_TYPE_SIZE + PAGENO_BYTES);
+    const pageNo = dataBuffer.readUInt32LE(PAGE_TYPE_SIZE + PAGENO_BYTES
       + SIZENO_BYTES_IN_CELL);
-    const prePageNo = dataBuffer.readInt32LE(PAGE_TYPE_SIZE
+    const prePageNo = dataBuffer.readUInt32LE(PAGE_TYPE_SIZE
       + PAGENO_BYTES * 2 + SIZENO_BYTES_IN_CELL);
-    const nextPageNo = dataBuffer.readInt32LE(PAGE_TYPE_SIZE
+    const nextPageNo = dataBuffer.readUInt32LE(PAGE_TYPE_SIZE
       + PAGENO_BYTES * 3 + SIZENO_BYTES_IN_CELL);
 
     this.setType(type)
@@ -586,7 +586,7 @@ class IdPage {
           reject(err);
         } else {
           fs.read(file, pageOne, 0, PAGE_SIZE, 0, (error) => {
-            const leafNo = pageOne.readInt32LE(4);
+            const leafNo = pageOne.readUInt32LE(4);
             if (error) {
               reject(err);
             } else {
@@ -650,22 +650,22 @@ class IndexPage {
     }
 
     this.type = type;
-    this.data.writeInt8(type, 0);
+    this.data.writeUInt8(type, 0);
 
     if (typeof pageParent === 'number') {
       this.pageParent = pageParent;
-      this.data.writeInt32LE(pageParent, 1);
+      this.data.writeUInt32LE(pageParent, 1);
     }
     if (typeof pageNo === 'number') {
       this.pageNo = pageNo;
-      this.data.writeInt32LE(pageNo, 7);
+      this.data.writeUInt32LE(pageNo, 7);
       cache.set(pageNo, this);
     }
 
     this.offset = PAGE_SIZE;
-    this.data.writeInt16LE(this.offset, 1 + 4 + 2 + 4);
+    this.data.writeUInt16LE(this.offset, 1 + 4 + 2 + 4);
     this.size = 0;
-    this.data.writeInt16LE(this.size, 5);
+    this.data.writeUInt16LE(this.size, 5);
   }
 
   static oneCellBytes(key) {
@@ -682,28 +682,28 @@ class IndexPage {
 
   setType(type) {
     this.type = type;
-    this.data.writeInt8(type, 0);
+    this.data.writeUInt8(type, 0);
     return this;
   }
 
   setPrePageNo(prePageNo) {
     this.prePageNo = prePageNo;
-    this.data.writeInt32LE(prePageNo, INDEXPAGE_HEADER_SIZE - 8);
+    this.data.writeUInt32LE(prePageNo, INDEXPAGE_HEADER_SIZE - 8);
     return this;
   }
 
   setNextPageNo(nextPageNo) {
     this.nextPageNo = nextPageNo;
-    this.data.writeInt32LE(nextPageNo, INDEXPAGE_HEADER_SIZE - 4);
+    this.data.writeUInt32LE(nextPageNo, INDEXPAGE_HEADER_SIZE - 4);
     return this;
   }
 
   getPrePageNo() {
-    return this.data.readInt32LE(INDEXPAGE_HEADER_SIZE - 8);
+    return this.data.readUInt32LE(INDEXPAGE_HEADER_SIZE - 8);
   }
 
   getNextPageNo() {
-    return this.data.readInt32LE(INDEXPAGE_HEADER_SIZE - 4);
+    return this.data.readUInt32LE(INDEXPAGE_HEADER_SIZE - 4);
   }
 
   getNextPage() {
@@ -730,7 +730,7 @@ class IndexPage {
 
   setParentPage(pageNo) {
     this.pageParent = pageNo;
-    this.data.writeInt32LE(pageNo, 1);
+    this.data.writeUInt32LE(pageNo, 1);
     return this;
   }
 
@@ -740,14 +740,14 @@ class IndexPage {
 
   setPageNo(pageNo) {
     this.pageNo = pageNo;
-    this.data.writeInt32LE(pageNo, 1 + 4 + 2);
+    this.data.writeUInt32LE(pageNo, 1 + 4 + 2);
     return this;
   }
 
   setSize(size) {
     this.size = size;
     // the header is like: type(1b) + pageParent(4b) + size(2b) ...
-    this.data.writeInt16LE(size, 1 + 4);
+    this.data.writeUInt16LE(size, 1 + 4);
     return this;
   }
 
@@ -761,7 +761,7 @@ class IndexPage {
 
   setOffset(offset) {
     this.offset = offset;
-    this.data.writeInt16LE(offset, 1 + 4 + 2 + 4);
+    this.data.writeUInt16LE(offset, 1 + 4 + 2 + 4);
     return this;
   }
 
@@ -787,13 +787,13 @@ class IndexPage {
   transformToReuse(nextReuseNo) {
     this.setType(PAGE_TYPE_REUSE, true);
     this.nextReuseNo = nextReuseNo;
-    this.data.writeInt32LE(nextReuseNo, 1);
+    this.data.writeUInt32LE(nextReuseNo, 1);
   }
 
   static LoadAsReuse(pageNo) {
     return IndexPage.__loadRawPage(pageNo, (dataBuffer) => {
       const reuseIndexPage = new IndexPage().setType(PAGE_TYPE_REUSE);
-      reuseIndexPage.nextReuseNo = dataBuffer.readInt32LE(1);
+      reuseIndexPage.nextReuseNo = dataBuffer.readUInt32LE(1);
       cache.set(pageNo, reuseIndexPage);
       return reuseIndexPage;
     });
@@ -801,7 +801,7 @@ class IndexPage {
 
   // 只在type为PAGE_TYPE_REUSE时候才调用
   reUseNext() {
-    const nextReuseNo = this.data.readInt32LE(1);
+    const nextReuseNo = this.data.readUInt32LE(1);
     return nextReuseNo;
   }
 
@@ -823,7 +823,7 @@ class IndexPage {
      * @returns {{key: String, id: {timeId: null, count: null}, childPageNo: Number}}
      */
   getCellByOffset(offset) {
-    const dataSize = this.data.readInt16LE(offset);
+    const dataSize = this.data.readUInt16LE(offset);
     const data = this.data.slice(
       offset + CELLDATA_BYTE_SIZE,
       dataSize + offset + CELLDATA_BYTE_SIZE,
@@ -834,13 +834,13 @@ class IndexPage {
 
     const idBuffer = data.slice(keySize, ID_BYTES + keySize);
     const id = { timeId: null, count: null };
-    id.timeId = idBuffer.readInt32LE(0);
-    id.count = idBuffer.readInt16LE(4);
+    id.timeId = idBuffer.readUInt32LE(0);
+    id.count = idBuffer.readUInt16LE(4);
 
     const childPageNoBuffer = data.slice(
       keySize + ID_BYTES, PAGENO_BYTES + ID_BYTES + keySize,
     );
-    const childPageNo = childPageNoBuffer.readInt32LE(0);
+    const childPageNo = childPageNoBuffer.readUInt32LE(0);
 
     return { key, id, childPageNo };
   }
@@ -852,7 +852,7 @@ class IndexPage {
     // this.data.slice share the same buffer with this.data
     const halfBuffer = dataCopy.slice(INDEXPAGE_HEADER_SIZE + position * 2,
       INDEXPAGE_HEADER_SIZE + this.size * 2);
-    this.data.writeInt16LE(offset, INDEXPAGE_HEADER_SIZE + position * 2);
+    this.data.writeUInt16LE(offset, INDEXPAGE_HEADER_SIZE + position * 2);
     halfBuffer.copy(
       this.data,
       INDEXPAGE_HEADER_SIZE + position * 2 + 2,
@@ -865,7 +865,7 @@ class IndexPage {
 
   // position starts from 0
   __getOffsetByIndex(position) {
-    return this.data.readInt16LE(INDEXPAGE_HEADER_SIZE + position * 2);
+    return this.data.readUInt16LE(INDEXPAGE_HEADER_SIZE + position * 2);
   }
 
   getCellInfoByIndex(index) {
@@ -1118,19 +1118,19 @@ class IndexPage {
   static LoadPage(pageNoN) {
     return this.__loadRawPage(pageNoN, (dataBuffer) => {
       const page = new IndexPage(null, null, null, dataBuffer);
-      const type = dataBuffer.readInt8(0);
+      const type = dataBuffer.readUInt8(0);
       page.setType(type);
-      const pageParent = dataBuffer.readInt32LE(1);
+      const pageParent = dataBuffer.readUInt32LE(1);
       page.setParentPage(pageParent);
-      const size = dataBuffer.readInt16LE(1 + 4);
+      const size = dataBuffer.readUInt16LE(1 + 4);
       page.setSize(size);
-      const pageNo = dataBuffer.readInt32LE(1 + 4 + 2);
+      const pageNo = dataBuffer.readUInt32LE(1 + 4 + 2);
       page.setPageNo(pageNo);
-      const offset = dataBuffer.readInt16LE(1 + 4 + 2 + 4);
+      const offset = dataBuffer.readUInt16LE(1 + 4 + 2 + 4);
       page.setOffset(offset);
-      const prePageNo = dataBuffer.readInt32LE(INDEXPAGE_HEADER_SIZE - 8);
+      const prePageNo = dataBuffer.readUInt32LE(INDEXPAGE_HEADER_SIZE - 8);
       page.setPrePageNo(prePageNo);
-      const nextPageNo = dataBuffer.readInt32LE(INDEXPAGE_HEADER_SIZE - 4);
+      const nextPageNo = dataBuffer.readUInt32LE(INDEXPAGE_HEADER_SIZE - 4);
       page.setNextPageNo(nextPageNo);
       cache.set(pageNo, page);
       return page;
@@ -1152,15 +1152,15 @@ class IndexPage {
     if (this.size > 20) {
       console.log(this);
     }
-    this.data.writeInt16LE(totalByteSize - CELLDATA_BYTE_SIZE,
+    this.data.writeUInt16LE(totalByteSize - CELLDATA_BYTE_SIZE,
       this.offset);
     this.data.write(key, this.offset + CELLDATA_BYTE_SIZE);
     // 依次写入id信息 timeId: 4b, count: 2b
-    this.data.writeInt32LE(id.timeId,
+    this.data.writeUInt32LE(id.timeId,
       this.offset + CELLDATA_BYTE_SIZE + keyByteSize);
-    this.data.writeInt16LE(id.count,
+    this.data.writeUInt16LE(id.count,
       this.offset + CELLDATA_BYTE_SIZE + keyByteSize + 4);
-    this.data.writeInt32LE(childPageNo,
+    this.data.writeUInt32LE(childPageNo,
       this.offset + CELLDATA_BYTE_SIZE + keyByteSize + ID_BYTES);
 
     if (this.size > 0) {
@@ -1209,7 +1209,7 @@ class IndexPage {
     } else {
       this.size += 1;
       this.setSize(this.size);
-      this.data.writeInt16LE(this.offset, INDEXPAGE_HEADER_SIZE);
+      this.data.writeUInt16LE(this.offset, INDEXPAGE_HEADER_SIZE);
     }
   }
 

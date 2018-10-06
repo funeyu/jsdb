@@ -56,34 +56,34 @@ class BtreeMeta {
   // 直接传递一块page大小buffer，包含所有的BtreeMeta
   constructor(pageBuffer) {
     this.data = pageBuffer;
-    const reuseListFirst = pageBuffer.readInt32LE(0);
-    const reuseListLast = pageBuffer.readInt32LE(4);
+    const reuseListFirst = pageBuffer.readUInt32LE(0);
+    const reuseListLast = pageBuffer.readUInt32LE(4);
 
     this.reuseList = {
       first: reuseListFirst,
       last: reuseListLast,
     };
 
-    const idBtreeMetaRootPageNo = pageBuffer.readInt32LE(REUSE_LIST_BYTES);
-    const idBtreeMetaWorkingPageNo = pageBuffer.readInt32LE(REUSE_LIST_BYTES + 4);
+    const idBtreeMetaRootPageNo = pageBuffer.readUInt32LE(REUSE_LIST_BYTES);
+    const idBtreeMetaWorkingPageNo = pageBuffer.readUInt32LE(REUSE_LIST_BYTES + 4);
     this.idBtreeMeta = {
       rootPageNo: idBtreeMetaRootPageNo,
       workingPageNo: idBtreeMetaWorkingPageNo,
     };
-    this.maxPageNo = pageBuffer.readInt32LE(REUSE_LIST_BYTES + ID_BTREE_META_BYTES);
-    this.btreeSize = pageBuffer.readInt8(REUSE_LIST_BYTES + ID_BTREE_META_BYTES
+    this.maxPageNo = pageBuffer.readUInt32LE(REUSE_LIST_BYTES + ID_BTREE_META_BYTES);
+    this.btreeSize = pageBuffer.readUInt8(REUSE_LIST_BYTES + ID_BTREE_META_BYTES
         + PAGE_NO_BYTES);
-    this.slotSize = pageBuffer.readInt8(ID_BTREE_META_HEADER - 3);
+    this.slotSize = pageBuffer.readUInt8(ID_BTREE_META_HEADER - 3);
     if (!this.slotSize) {
       // 如果slotSize为空, 则置初始值 2^3
       this.slotSize = 8;
     }
-    this.data.writeInt8(this.slotSize, ID_BTREE_META_HEADER - 3);
-    this.offset = this.data.readInt16LE(ID_BTREE_META_HEADER - 2);
+    this.data.writeUInt8(this.slotSize, ID_BTREE_META_HEADER - 3);
+    this.offset = this.data.readUInt16LE(ID_BTREE_META_HEADER - 2);
     if (this.offset === 0) {
       // 初始状态 offset为最大值
       this.offset = PAGE_SIZE;
-      this.data.writeInt16LE(PAGE_SIZE, ID_BTREE_META_HEADER - 2);
+      this.data.writeUInt16LE(PAGE_SIZE, ID_BTREE_META_HEADER - 2);
     }
   }
 
@@ -118,12 +118,12 @@ class BtreeMeta {
         first,
         last,
       };
-      this.data.writeInt32LE(first, 0);
-      this.data.writeInt32LE(last, 4);
+      this.data.writeUInt32LE(first, 0);
+      this.data.writeUInt32LE(last, 4);
     } else {
       first = pageNo;
       this.reuseList.first = first;
-      this.data.writeInt32LE(first, 0);
+      this.data.writeUInt32LE(first, 0);
     }
   }
 
@@ -138,8 +138,8 @@ class BtreeMeta {
       last,
     };
 
-    this.data.writeInt32LE(first, 0);
-    this.data.writeInt32LE(last, 4);
+    this.data.writeUInt32LE(first, 0);
+    this.data.writeUInt32LE(last, 4);
   }
 
   async fetchReuse() {
@@ -169,8 +169,8 @@ class BtreeMeta {
     // 先粗暴的将所有的key先收集起来, 再重新添加
     const keys = [];
     while (beginOffset > this.offset) {
-      const rootPageNo = this.data.readInt32LE(beginOffset - 4);
-      const keySize = this.data.readInt8(beginOffset - 7);
+      const rootPageNo = this.data.readUInt32LE(beginOffset - 4);
+      const keySize = this.data.readUInt8(beginOffset - 7);
       const key = this.data.slice(beginOffset - 7 - keySize,
         beginOffset - 7).toString();
       keys.push({
@@ -197,13 +197,13 @@ class BtreeMeta {
 
   setBtreeSize(size) {
     this.btreeSize = size;
-    this.data.writeInt8(size, REUSE_LIST_BYTES + ID_BTREE_META_BYTES + PAGE_NO_BYTES);
+    this.data.writeUInt8(size, REUSE_LIST_BYTES + ID_BTREE_META_BYTES + PAGE_NO_BYTES);
     return this;
   }
 
   setMaxPageNo(pageNo) {
     this.maxPageNo = pageNo;
-    this.data.writeInt32LE(pageNo, REUSE_LIST_BYTES + ID_BTREE_META_BYTES);
+    this.data.writeUInt32LE(pageNo, REUSE_LIST_BYTES + ID_BTREE_META_BYTES);
     return this;
   }
 
@@ -215,19 +215,19 @@ class BtreeMeta {
 
   setIdBtreeMeta(idBtreeMeta) {
     this.idBtreeMeta = idBtreeMeta;
-    this.data.writeInt32LE(idBtreeMeta.rootPageNo, REUSE_LIST_BYTES);
-    this.data.writeInt32LE(idBtreeMeta.workingPageNo, REUSE_LIST_BYTES + 4);
+    this.data.writeUInt32LE(idBtreeMeta.rootPageNo, REUSE_LIST_BYTES);
+    this.data.writeUInt32LE(idBtreeMeta.workingPageNo, REUSE_LIST_BYTES + 4);
     return this;
   }
 
   setIdBtreeWorkingPage(pageNo) {
     this.idBtreeMeta.workingPageNo = pageNo;
-    this.data.writeInt32LE(pageNo, REUSE_LIST_BYTES + 4);
+    this.data.writeUInt32LE(pageNo, REUSE_LIST_BYTES + 4);
   }
 
   setRootPageNo(pageNo) {
     this.idBtreeMeta.rootPageNo = pageNo;
-    this.data.writeInt32LE(pageNo, REUSE_LIST_BYTES);
+    this.data.writeUInt32LE(pageNo, REUSE_LIST_BYTES);
   }
 
   getMaxPageNo() {
@@ -273,9 +273,9 @@ class BtreeMeta {
 
   getIndexMetaInfo(offset) {
     const dataCopy = Buffer.from(this.data);
-    const rootPageNo = dataCopy.readInt32LE(offset - 4);
-    const nextOffset = dataCopy.readInt16LE(offset - 6);
-    const size = dataCopy.readInt8(offset - 7);
+    const rootPageNo = dataCopy.readUInt32LE(offset - 4);
+    const nextOffset = dataCopy.readUInt16LE(offset - 6);
+    const size = dataCopy.readUInt8(offset - 7);
     const keyBuffer = dataCopy.slice(offset - 7 - size, offset - 7);
     return {
       rootPageNo,
@@ -299,7 +299,7 @@ class BtreeMeta {
   }
 
   __rewriteNextOffset(offset, newNextOffset) {
-    this.data.writeInt16LE(newNextOffset, offset - PAGE_NO_BYTES - 2);
+    this.data.writeUInt16LE(newNextOffset, offset - PAGE_NO_BYTES - 2);
   }
 
   __free() {
@@ -311,12 +311,12 @@ class BtreeMeta {
     const keyCode = hash(key);
     // eslint-disable-next-line
     const slotIndex = keyCode & (this.slotSize - 1);
-    const offset = this.data.readInt16LE(ID_BTREE_META_HEADER + slotIndex * 2);
+    const offset = this.data.readUInt16LE(ID_BTREE_META_HEADER + slotIndex * 2);
     return offset;
   }
 
   __writeOffsetInSlot(index, offset) {
-    this.data.writeInt16LE(offset, ID_BTREE_META_HEADER + index * 2);
+    this.data.writeUInt16LE(offset, ID_BTREE_META_HEADER + index * 2);
   }
 
   // 在冲突链中查找最后一个节点, 返回该metaInfo
@@ -335,13 +335,13 @@ class BtreeMeta {
     // key的长度 + rootPage 的长度 + nextOffset 长度 + size
     const oneIndexMetaSize = keySize + PAGE_NO_BYTES + 2 + 1;
     const start = this.offset;
-    this.data.writeInt32LE(rootPageNo, start - 4);
-    this.data.writeInt16LE(nextOffset, start - 6);
-    this.data.writeInt8(keySize, start - 7);
+    this.data.writeUInt32LE(rootPageNo, start - 4);
+    this.data.writeUInt16LE(nextOffset, start - 6);
+    this.data.writeUInt8(keySize, start - 7);
     this.data.write(key, start - oneIndexMetaSize);
     this.setBtreeSize(this.btreeSize + 1);
     this.offset -= (7 + keySize);
-    this.data.writeInt16LE(this.offset, ID_BTREE_META_HEADER - 2);
+    this.data.writeUInt16LE(this.offset, ID_BTREE_META_HEADER - 2);
   }
 
   addIndexRootPage(key, rootPageNo) {
@@ -375,7 +375,7 @@ class BtreeMeta {
   }
 
   __changeRootPageNo(offset, rootPageNo) {
-    this.data.writeInt32LE(rootPageNo, offset - 4);
+    this.data.writeUInt32LE(rootPageNo, offset - 4);
   }
 
   // 更新btree索引的rootPageNo, btree每当rootPage裂变的时候, 都得更新;
