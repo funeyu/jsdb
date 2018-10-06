@@ -81,6 +81,11 @@ fn();
 }
 ```
 
+architecture
+------------
+  由两个文件组成，一个为data文件，一个为index文件; index里有一个id组成的btree和user定义组成的一个btree；
+id是由内部按照时间生成的一自增的对象，形如：`{timeId: xxx, count: xxx}`
+
 ToDo List
 ---------
 - 实现删除的操作（进行中）

@@ -1,6 +1,6 @@
 {
   "name": "fudb",
-  "version": "0.0.2",
+  "version": "0.0.2-node",
   "description": "a simple db based on btree data structure",
   "main": "index.js",
   "scripts": {
